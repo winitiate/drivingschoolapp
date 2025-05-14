@@ -1,0 +1,35 @@
+// src/data/index.ts
+import type { StudentDriverStore } from "./StudentDriverStore";
+import { FirestoreStudentDriverStore } from "./FirestoreStudentDriverStore";
+import type { InstructorStore } from "./InstructorStore";
+import { FirestoreInstructorStore } from "./FirestoreInstructorStore";
+import type { AppointmentStore } from "./AppointmentStore";
+import { FirestoreAppointmentStore } from "./FirestoreAppointmentStore";
+import type { LessonTypeStore } from "./LessonTypeStore";
+import { FirestoreLessonTypeStore } from "./FirestoreLessonTypeStore";
+import type { SchoolStore } from "./SchoolStore";
+import { FirestoreSchoolStore } from "./FirestoreSchoolStore";
+import type { FAQStore } from "./FAQStore";
+import { FirestoreFAQStore } from "./FirestoreFAQStore";
+import type { AssessmentStore } from "./AssessmentStore";
+import { FirestoreAssessmentStore } from "./FirestoreAssessmentStore";
+import type { PaymentStore } from "./PaymentStore";
+import { FirestorePaymentStore } from "./FirestorePaymentStore";
+import type { VehicleStore } from "./VehicleStore";
+import { FirestoreVehicleStore } from "./FirestoreVehicleStore";
+import type { PackageStore } from "./PackageStore";
+import { FirestorePackageStore } from "./FirestorePackageStore";
+import type { NotificationStore } from "./NotificationStore";
+import { FirestoreNotificationStore } from "./FirestoreNotificationStore";
+
+export const studentStore: StudentDriverStore = new FirestoreStudentDriverStore();
+export const instructorStore: InstructorStore = new FirestoreInstructorStore();
+export const appointmentStore: AppointmentStore = new FirestoreAppointmentStore();
+export const lessonTypeStore: LessonTypeStore = new FirestoreLessonTypeStore();
+export const schoolStore: SchoolStore = new FirestoreSchoolStore();
+export const faqStore: FAQStore = new FirestoreFAQStore();
+export const assessmentStore: AssessmentStore = new FirestoreAssessmentStore();
+export const paymentStore: PaymentStore = new FirestorePaymentStore();
+export const vehicleStore: VehicleStore = new FirestoreVehicleStore();
+export const packageStore: PackageStore = new FirestorePackageStore();
+export const notificationStore: NotificationStore = new FirestoreNotificationStore();
