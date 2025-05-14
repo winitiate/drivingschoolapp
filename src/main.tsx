@@ -1,10 +1,11 @@
 // src/main.tsx
 import React from 'react';
+import './index.css';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
+import './firebase';        // initialize Firebase first
 import { AuthProvider } from './auth/AuthProvider';
 import App from './App';
-import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
