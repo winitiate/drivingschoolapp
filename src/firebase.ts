@@ -1,12 +1,10 @@
 // src/firebase.ts
-import { initializeApp } from 'firebase/app';
-import { getFirestore }  from 'firebase/firestore';
-import { getAuth }       from 'firebase/auth';
+import { initializeApp }       from 'firebase/app';
+import { initializeFirestore } from 'firebase/firestore';
+import { getAuth }             from 'firebase/auth';
 
-// In browser (Vite), use import.meta.env; in Node, use process.env
-const env = typeof window !== 'undefined' && import.meta?.env
-  ? import.meta.env
-  : process.env as Record<string, string>;
+// In Vite, only VITE_-prefixed env vars are exposed via import.meta.env
+const env = import.meta.env as Record<string,string>;
 
 const firebaseConfig = {
   apiKey:            env.VITE_FIREBASE_API_KEY!,
@@ -17,8 +15,14 @@ const firebaseConfig = {
   appId:             env.VITE_FIREBASE_APP_ID!,
 };
 
-// Ensure we only initialize once
+console.log('🔥 Firebase config:', firebaseConfig);
+
 const app = initializeApp(firebaseConfig);
 
+// Use only fetch-based RPCs; disable any streaming/listen channels
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: false,
+  useFetchStreams:             true,
+});
+
 export const auth = getAuth(app);
-export const db   = getFirestore(app);

@@ -1,10 +1,12 @@
+// src/pages/SignIn.tsx
 import React, { useState } from 'react';
-import { Box, Typography, TextField, Button, Alert, Stack } from '@mui/material';
+import { Box, Typography, TextField, Button, Alert, Stack, Divider } from '@mui/material';
+import GoogleIcon from '@mui/icons-material/Google';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 
 export default function SignIn() {
-  const { signIn } = useAuth();
+  const { signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,12 +27,24 @@ export default function SignIn() {
     }
   };
 
+  const handleGoogle = async () => {
+    setError(null);
+    try {
+      await signInWithGoogle();
+      navigate('/student-dashboard');
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
   return (
     <Box maxWidth="sm" mx="auto" py={4}>
       <Typography variant="h4" align="center" gutterBottom>
         Sign In
       </Typography>
+
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
       <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
         <Stack spacing={3}>
           <TextField
@@ -49,6 +63,7 @@ export default function SignIn() {
             onChange={e => setPassword(e.target.value)}
             required
           />
+
           <Button
             type="submit"
             variant="contained"
@@ -57,6 +72,17 @@ export default function SignIn() {
             disabled={loading}
           >
             {loading ? 'Signing in…' : 'Sign In'}
+          </Button>
+
+          <Divider>or</Divider>
+
+          <Button
+            variant="outlined"
+            startIcon={<GoogleIcon />}
+            fullWidth
+            onClick={handleGoogle}
+          >
+            Continue with Google
           </Button>
         </Stack>
       </Box>
