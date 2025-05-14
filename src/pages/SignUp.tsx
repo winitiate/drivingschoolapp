@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Box, Typography, TextField, Button, Stack } from '@mui/material';
 import { useAuth } from '../auth/useAuth';
 
 export default function SignUp() {
@@ -13,46 +14,38 @@ export default function SignUp() {
   };
 
   return (
-    <div className="card w-[36rem] bg-base-100 shadow-xl mx-auto">
-      <div className="card-body">
-        <h2 className="card-title justify-center">Create Account</h2>
-        <form onSubmit={handleSubmit} className="space-y-6 mt-4">
-          <div className="form-control">
-            <label className="label" htmlFor="email">
-              <span className="label-text">Email</span>
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              className="input input-bordered"
-            />
-          </div>
-          <div className="form-control">
-            <label className="label" htmlFor="password">
-              <span className="label-text">Password</span>
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={pass}
-              onChange={e => setPass(e.target.value)}
-              required
-              className="input input-bordered"
-            />
-          </div>
-          <div className="form-control mt-6">
-            <button
-              type="submit"
-              className="btn w-full bg-blue-600 hover:bg-blue-700 text-white border-none"
-            >
-              Sign Up
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <Box maxWidth="sm" mx="auto" py={4}>
+      <Typography variant="h4" align="center" gutterBottom>
+        Create Account
+      </Typography>
+      <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
+        <Stack spacing={3}>
+          <TextField
+            label="Email"
+            type="email"
+            fullWidth
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+          />
+          <TextField
+            label="Password"
+            type="password"
+            fullWidth
+            value={pass}
+            onChange={e => setPass(e.target.value)}
+            required
+          />
+          <Button
+            type="submit"
+            variant="contained"
+            color="secondary"
+            fullWidth
+          >
+            Sign Up
+          </Button>
+        </Stack>
+      </Box>
+    </Box>
   );
 }

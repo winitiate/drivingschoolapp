@@ -1,9 +1,14 @@
-// src/components/Footer.tsx
 import React from 'react';
+import { Box, Typography, Container } from '@mui/material';
+
 export default function Footer() {
   return (
-    <footer style={{ padding: '1rem', borderTop: '1px solid #ddd', textAlign: 'center' }}>
-      &copy; {new Date().getFullYear()} Driving School App
-    </footer>
+    <Box component="footer" py={2} bgcolor="background.paper">
+      <Container maxWidth="md">
+        <Typography variant="body2" color="textSecondary" align="center">
+          &copy; {new Date().getFullYear()} Driving School App
+        </Typography>
+      </Container>
+    </Box>
   );
 }

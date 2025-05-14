@@ -1,21 +1,42 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Box, Typography, Button, Stack } from '@mui/material';
+import { Link as RouterLink } from 'react-router-dom';
 
 export default function Home() {
   return (
-    <div className="card w-[36rem] bg-base-100 shadow-xl text-center p-8 mx-auto">
-      <h1 className="text-3xl font-bold mb-4">Welcome to the Driving School App</h1>
-      <p className="mb-6">
-        Learn to drive with confidence. Manage your lessons and track your progress.
-      </p>
-      <div className="flex justify-center gap-4">
-        <Link to="/sign-up" className="btn bg-blue-600 hover:bg-blue-700 text-white border-none">
+    <Box textAlign="center" py={4}>
+      <Typography variant="h3" gutterBottom>
+        Welcome to the Driving School App
+      </Typography>
+      <Typography variant="body1" paragraph>
+        Learn to drive with confidence. Manage your lessons, track progress, and stay connected.
+      </Typography>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        spacing={2}
+        justifyContent="center"
+        mt={4}
+      >
+        <Button
+          component={RouterLink}
+          to="/sign-up"
+          variant="contained"
+          color="primary"
+          size="large"
+          fullWidth={{ xs: true, sm: false }}
+        >
           Get Started
-        </Link>
-        <Link to="/sign-in" className="btn btn-outline">
+        </Button>
+        <Button
+          component={RouterLink}
+          to="/sign-in"
+          variant="outlined"
+          size="large"
+          fullWidth={{ xs: true, sm: false }}
+        >
           Sign In
-        </Link>
-      </div>
-    </div>
+        </Button>
+      </Stack>
+    </Box>
   );
 }

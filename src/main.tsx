@@ -1,18 +1,21 @@
-// src/main.tsx
 import React from 'react';
-import './index.css';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
-import './firebase';        // initialize Firebase first
-import { AuthProvider } from './auth/AuthProvider';
 import App from './App';
+import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+const theme = createTheme({
+  palette: {
+    mode: 'light',
+    primary:   { main: '#1976d2' },  // your blue
+    secondary: { main: '#6c63ff' },  // updated Sign Up color
+  },
+});
+
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <App />
+    </ThemeProvider>
   </React.StrictMode>
 );

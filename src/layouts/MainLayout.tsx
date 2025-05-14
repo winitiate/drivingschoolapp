@@ -1,25 +1,22 @@
-import React, { useEffect } from 'react';
+import React, { ReactNode } from 'react';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
+import { Container, Box } from '@mui/material';
 
-export default function MainLayout({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const currentTheme = document.documentElement.getAttribute("data-theme");
-    if (!currentTheme) {
-      document.documentElement.setAttribute("data-theme", prefersDark ? "dark" : "light");
-    }
-  }, []);
-
+export default function MainLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-col min-h-screen">
+    <Box display="flex" flexDirection="column" minHeight="100vh">
       <Header />
-      <main className="flex-grow flex justify-center px-4">
-        <div className="w-full max-w-4xl py-8">
-          {children}
-        </div>
-      </main>
+
+      <Container
+        component="main"
+        sx={{ flex: 1, py: 4 }}
+        maxWidth="md"
+      >
+        {children}
+      </Container>
+
       <Footer />
-    </div>
+    </Box>
   );
 }
