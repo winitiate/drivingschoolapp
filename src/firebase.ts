@@ -1,11 +1,9 @@
 // src/firebase.ts
 import { initializeApp }       from 'firebase/app';
 import { initializeFirestore } from 'firebase/firestore';
-import { getAuth }             from 'firebase/auth';
+import { getAuth }            from 'firebase/auth';
 
-// In Vite, only VITE_-prefixed env vars are exposed via import.meta.env
 const env = import.meta.env as Record<string,string>;
-
 const firebaseConfig = {
   apiKey:            env.VITE_FIREBASE_API_KEY!,
   authDomain:        env.VITE_FIREBASE_AUTH_DOMAIN!,
@@ -15,14 +13,15 @@ const firebaseConfig = {
   appId:             env.VITE_FIREBASE_APP_ID!,
 };
 
-console.log('🔥 Firebase config:', firebaseConfig);
+console.warn('🔥 firebaseConfig:', firebaseConfig);
 
+// Initialize app
 const app = initializeApp(firebaseConfig);
 
-// Use only fetch-based RPCs; disable any streaming/listen channels
+// **Force XHR long-polling and disable fetch-streams** so no Listen channel is ever opened
 export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: false,
-  useFetchStreams:             true,
+  experimentalForceLongPolling: true,
+  useFetchStreams:             false,
 });
 
 export const auth = getAuth(app);

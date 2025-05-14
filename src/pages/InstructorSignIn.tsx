@@ -1,72 +1,103 @@
 // src/pages/InstructorSignIn.tsx
-import React, { useState } from 'react';
-import { Container, Box, TextField, Button, Typography, Alert } from '@mui/material';
+import React, { useEffect, useState } from 'react';
+import {
+  Box,
+  CircularProgress,
+  Typography,
+  TextField,
+  Button,
+  Alert,
+  Divider,
+  Stack,
+} from '@mui/material';
+import GoogleIcon from '@mui/icons-material/Google';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
 
 export default function InstructorSignIn() {
-  const { signInUser } = useAuth();
+  const { user, loading, signInWithGoogle, signIn } = useAuth();
   const navigate = useNavigate();
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  useEffect(() => {
+    console.log('InstructorSignIn useEffect →', { user, loading });
+    if (!loading && user) {
+      if (user.roles.includes('instructor')) {
+        navigate('/instructor', { replace: true });
+      } else {
+        setError('You do not have instructor permissions.');
+        console.error('InstructorSignIn: missing instructor role:', user.roles);
+      }
+    }
+  }, [user, loading, navigate]);
+
+  const handleEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setLoading(true);
     try {
-      // Sign in (will populate user.role)
-      await signInUser(email, password);
-      // Redirect to instructor dashboard
-      navigate('/instructor');
+      await signIn(email, password);
     } catch (err: any) {
-      setError(err.message || 'Failed to sign in');
-    } finally {
-      setLoading(false);
+      setError(err.message);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setError(null);
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
   return (
-    <Container maxWidth="xs">
-      <Box mt={8} mb={4} textAlign="center">
-        <Typography variant="h5">Instructor Sign In</Typography>
-      </Box>
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-      <Box component="form" onSubmit={handleSubmit} display="flex" flexDirection="column" gap={2}>
-        <TextField
-          label="Email"
-          type="email"
-          value={email}
-          required
-          fullWidth
-          onChange={e => setEmail(e.target.value)}
-        />
-        <TextField
-          label="Password"
-          type="password"
-          value={password}
-          required
-          fullWidth
-          onChange={e => setPassword(e.target.value)}
-        />
-        <Button type="submit" variant="contained" disabled={loading}>
-          {loading ? 'Signing In…' : 'Sign In'}
-        </Button>
+    <Box maxWidth="400px" mx="auto" mt={8} px={2}>
+      <Typography variant="h4" align="center" gutterBottom>
+        Instructor Sign In
+      </Typography>
+      {error && <Alert severity="error">{error}</Alert>}
+      <Stack spacing={2} mt={2}>
+        <form onSubmit={handleEmail}>
+          <Stack spacing={2}>
+            <TextField
+              label="Email"
+              type="email"
+              fullWidth
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+            />
+            <TextField
+              label="Password"
+              type="password"
+              fullWidth
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+            />
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              disabled={loading}
+            >
+              {loading ? <CircularProgress size={24} /> : 'Sign In'}
+            </Button>
+          </Stack>
+        </form>
+        <Divider>or</Divider>
         <Button
-          component={RouterLink}
-          to="/"
-          color="secondary"
+          variant="outlined"
+          startIcon={<GoogleIcon />}
+          fullWidth
+          onClick={handleGoogle}
+          disabled={loading}
         >
-          Back to Home
+          {loading ? <CircularProgress size={24} /> : 'Continue with Google'}
         </Button>
-      </Box>
-    </Container>
+      </Stack>
+    </Box>
   );
 }

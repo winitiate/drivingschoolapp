@@ -33,6 +33,15 @@ export default function Footer() {
           <Link component={RouterLink} to="/instructor" color="textSecondary" underline="hover" mx={1}>
             Instructor Dashboard
           </Link>
+          <Link component={RouterLink} to="/super-admin/sign-in" color="textSecondary" underline="hover" mx={1}>
+            Platform Admin Sign In
+          </Link>
+          <Link component={RouterLink} to="/super-admin" color="textSecondary" underline="hover" mx={1}>
+            Platform Admin Dashboard
+          </Link>
+          <Link component={RouterLink} to="/super-admin/schools" color="textSecondary" underline="hover" mx={1}>
+            Manage Schools
+          </Link>
         </Box>
 
         {/* Copyright */}

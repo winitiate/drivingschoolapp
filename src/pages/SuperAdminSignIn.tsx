@@ -1,4 +1,4 @@
-// src/pages/AdminSignIn.tsx
+// src/pages/SuperAdminSignIn.tsx
 import React, { useEffect, useState } from 'react';
 import {
   Box,
@@ -14,7 +14,7 @@ import GoogleIcon from '@mui/icons-material/Google';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 
-export default function AdminSignIn() {
+export default function SuperAdminSignIn() {
   const { user, loading, signInWithGoogle, signIn } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -22,13 +22,13 @@ export default function AdminSignIn() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('AdminSignIn useEffect →', { user, loading });
+    console.log('SuperAdminSignIn useEffect →', { user, loading });
     if (!loading && user) {
-      if (user.roles.includes('schoolAdmin')) {
-        navigate('/admin', { replace: true });
+      if (user.roles.includes('superAdmin')) {
+        navigate('/super-admin', { replace: true });
       } else {
-        setError('You do not have admin permissions.');
-        console.error('AdminSignIn: missing schoolAdmin role:', user.roles);
+        setError('You do not have super-admin permissions.');
+        console.error('SuperAdminSignIn: missing superAdmin role:', user.roles);
       }
     }
   }, [user, loading, navigate]);
@@ -55,7 +55,7 @@ export default function AdminSignIn() {
   return (
     <Box maxWidth="400px" mx="auto" mt={8} px={2}>
       <Typography variant="h4" align="center" gutterBottom>
-        School Admin Sign In
+        Super Admin Sign In
       </Typography>
       {error && <Alert severity="error">{error}</Alert>}
       <Stack spacing={2} mt={2}>
@@ -87,9 +87,7 @@ export default function AdminSignIn() {
             </Button>
           </Stack>
         </form>
-
         <Divider>or</Divider>
-
         <Button
           variant="outlined"
           startIcon={<GoogleIcon />}

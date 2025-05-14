@@ -1,55 +1,70 @@
+// src/App.tsx
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AuthProvider } from './auth/useAuth';
 
-import MainLayout from './layouts/MainLayout';
-import AdminLayout from './layouts/AdminLayout';
+import MainLayout       from './layouts/MainLayout';
+import AdminLayout      from './layouts/AdminLayout';
 import InstructorLayout from './layouts/InstructorLayout';
-import ProtectedAdminRoute from './components/ProtectedAdminRoute';
-import ProtectedInstructorRoute from './components/ProtectedInstructorRoute';
+import SuperAdminLayout from './layouts/SuperAdminLayout';
 
-import Home from './pages/Home';
-import SignIn from './pages/SignIn';
-import SignUp from './pages/SignUp';
-import StudentDashboard from './pages/StudentDashboard';
+import ProtectedStudentRoute     from './components/ProtectedStudentRoute';
+import ProtectedAdminRoute       from './components/ProtectedAdminRoute';
+import ProtectedInstructorRoute  from './components/ProtectedInstructorRoute';
+import ProtectedSuperAdminRoute  from './components/ProtectedSuperAdminRoute';
 
-import AdminSignIn from './pages/AdminSignIn';
+import Home           from './pages/Home';
+import SignIn         from './pages/SignIn';
+import SignUp         from './pages/SignUp';
+import StudentDashboard    from './pages/StudentDashboard';
+
+import AdminSignIn    from './pages/AdminSignIn';
 import AdminDashboard from './pages/AdminDashboard';
 
-import InstructorSignIn from './pages/InstructorSignIn';
+import InstructorSignIn    from './pages/InstructorSignIn';
 import InstructorDashboard from './pages/InstructorDashboard';
+
+import SuperAdminSignIn    from './pages/SuperAdminSignIn';
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import ManageSchools       from './pages/ManageSchools';
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Public/User routes */}
-        <Route element={<MainLayout />}>
-          <Route path="/" element={<Home />} />
-          <Route path="/sign-in" element={<SignIn />} />
-          <Route path="/sign-up" element={<SignUp />} />
-          <Route
-            path="/student-dashboard"
-            element={<ProtectedAdminRoute requireAdmin={false}><StudentDashboard /></ProtectedAdminRoute>}
-          />
-        </Route>
-
-        {/* Admin routes */}
-        <Route element={<AdminLayout />}>
-          <Route path="/admin/sign-in" element={<AdminSignIn />} />
-          <Route element={<ProtectedAdminRoute requireAdmin={true} />}>
-            <Route path="/admin" element={<AdminDashboard />} />
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<MainLayout />}>
+            <Route path="/"        element={<Home />} />
+            <Route path="/sign-in" element={<SignIn />} />
+            <Route path="/sign-up" element={<SignUp />} />
+            <Route element={<ProtectedStudentRoute />}>
+              <Route path="/student" element={<StudentDashboard />} />
+            </Route>
           </Route>
-        </Route>
 
-        {/* Instructor routes */}
-        <Route element={<InstructorLayout />}>
-          <Route path="/instructor/sign-in" element={<InstructorSignIn />} />
-          <Route element={<ProtectedInstructorRoute />}>
-            <Route path="/instructor" element={<InstructorDashboard />} />
-            {/* e.g. <Route path="courses" element={<InstructorCourses />} /> */}
+          <Route element={<AdminLayout />}>
+            <Route path="/admin/sign-in" element={<AdminSignIn />} />
+            <Route element={<ProtectedAdminRoute />}>
+              <Route path="/admin" element={<AdminDashboard />} />
+            </Route>
           </Route>
-        </Route>
-      </Routes>
-    </BrowserRouter>
+
+          <Route element={<InstructorLayout />}>
+            <Route path="/instructor/sign-in" element={<InstructorSignIn />} />
+            <Route element={<ProtectedInstructorRoute />}>
+              <Route path="/instructor" element={<InstructorDashboard />} />
+            </Route>
+          </Route>
+
+          <Route element={<SuperAdminLayout />}>
+            <Route path="/super-admin/sign-in" element={<SuperAdminSignIn />} />
+            <Route element={<ProtectedSuperAdminRoute />}>
+              <Route path="/super-admin" element={<SuperAdminDashboard />} />
+              <Route path="/super-admin/schools" element={<ManageSchools />} />
+            </Route>
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }

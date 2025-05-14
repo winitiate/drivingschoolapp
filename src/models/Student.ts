@@ -1,11 +1,13 @@
 // src/models/Student.ts
 import { BaseEntity } from './BaseEntity';
 
+/**
+ * Student-specific data.
+ * Auth/profile lives in users/{userId}.
+ */
 export interface Student extends BaseEntity {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
+  /** Link back to users/{uid} */
+  userId: string;
 
   licenceNumber: string;
   licenceClass: string;
@@ -26,13 +28,13 @@ export interface Student extends BaseEntity {
 
   roadTestAppointment: Date;
   banned: boolean;
-  banReason: string;
+  banReason?: string;
 
-  firebaseAuthUid: string;
   progress: {
     totalLessons: number;
     skillsMastered: string[];
   };
+
   docs: {
     licenceCopyUrl: string;
     permitCopyUrl: string;

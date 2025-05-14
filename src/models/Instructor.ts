@@ -2,10 +2,8 @@
 import { BaseEntity } from './BaseEntity';
 
 export interface Instructor extends BaseEntity {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
+  /** Link back to users/{uid} */
+  userId: string;
 
   licenceNumber: string;
   licenceClass: string;
@@ -16,7 +14,6 @@ export interface Instructor extends BaseEntity {
     postalCode: string;
   };
 
-  firebaseAuthUid: string;
   photoUrl: string;
   bio: string;
   languagesSpoken: string[];
