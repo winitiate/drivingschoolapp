@@ -2,6 +2,9 @@
 import { BaseEntity } from './BaseEntity';
 
 export interface Instructor extends BaseEntity {
+  /** Which schools this instructor belongs to */
+  schoolIds: string[];
+
   /** Link back to users/{uid} */
   userId: string;
 

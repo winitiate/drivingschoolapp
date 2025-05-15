@@ -2,11 +2,13 @@
 import React from 'react';
 import { Outlet, Link as RouterLink } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Box, Button, Container } from '@mui/material';
-import Footer from '../components/Footer';
+import Footer from '../components/Layout/Footer';
 import { useAuth } from '../auth/useAuth';
 
 export default function SuperAdminLayout() {
   const { user, signOutUser } = useAuth();
+
+  const isSuperAdmin = user?.roles.includes('superAdmin');
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -21,7 +23,7 @@ export default function SuperAdminLayout() {
             Platform Admin
           </Typography>
 
-          {user && user.role === 'superAdmin' ? (
+          {isSuperAdmin ? (
             <>
               <Button
                 color="inherit"
@@ -53,7 +55,10 @@ export default function SuperAdminLayout() {
         </Toolbar>
       </AppBar>
 
-      <Container component="main" sx={{ flex: 1, p: 3, maxWidth: 800, mx: 'auto' }}>
+      <Container
+        component="main"
+        sx={{ flex: 1, p: 3, maxWidth: 800, mx: 'auto' }}
+      >
         <Outlet />
       </Container>
 

@@ -4,7 +4,7 @@ import { Outlet } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Button, Box, Container } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
-import Footer from '../components/Footer';
+import Footer from '../components/Layout/Footer';
 
 export default function MainLayout() {
   const { user, signOutUser } = useAuth();

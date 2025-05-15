@@ -3,7 +3,7 @@ import React from 'react';
 import { Link as RouterLink, Navigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { useStudentAppointments } from '../hooks/useStudentAppointments';
-import AppointmentTable from '../components/AppointmentTable';
+import AppointmentTable from '../components/Appointments/AppointmentsTable';
 import { Box, Button, Typography } from '@mui/material';
 
 export default function StudentDashboard() {

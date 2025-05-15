@@ -43,11 +43,21 @@ export class FirestoreStudentDriverStore implements StudentDriverStore {
       ...student,
       createdAt: student.createdAt || now,
       updatedAt: now,
-    });
+    }, { merge: true });
   }
 
   async listAll(): Promise<Student[]> {
     const snaps = await getDocs(collection(db, STUDENTS_COLLECTION));
+    return snaps.docs.map(d => ({ id: d.id, ...(d.data() as Student) }));
+  }
+
+  /** List only those students whose schoolIds includes the given schoolId */
+  async listBySchool(schoolId: string): Promise<Student[]> {
+    const q = query(
+      collection(db, STUDENTS_COLLECTION),
+      where("schoolIds", "array-contains", schoolId)
+    );
+    const snaps = await getDocs(q);
     return snaps.docs.map(d => ({ id: d.id, ...(d.data() as Student) }));
   }
 }

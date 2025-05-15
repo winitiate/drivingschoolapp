@@ -3,7 +3,7 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { AppBar, Toolbar, Typography, Box, Container, Button } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
-import Footer from '../components/Footer';
+import Footer from '../components/Layout/Footer';
 import { useAuth } from '../auth/useAuth';
 
 export default function AdminLayout() {

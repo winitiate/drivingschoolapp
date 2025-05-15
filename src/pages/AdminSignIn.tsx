@@ -13,25 +13,62 @@ import {
 import GoogleIcon from '@mui/icons-material/Google';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
+import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
 
 export default function AdminSignIn() {
   const { user, loading, signInWithGoogle, signIn } = useAuth();
   const navigate = useNavigate();
+  const db = getFirestore();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log('AdminSignIn useEffect →', { user, loading });
-    if (!loading && user) {
-      if (user.roles.includes('schoolAdmin')) {
-        navigate('/admin', { replace: true });
-      } else {
+    async function handleRedirect() {
+      if (!user) return;
+
+      // only allow schoolAdmin role
+      if (!user.roles.includes('schoolAdmin')) {
         setError('You do not have admin permissions.');
-        console.error('AdminSignIn: missing schoolAdmin role:', user.roles);
+        return;
+      }
+
+      try {
+        // find all schools where user is owner or admin
+        const q = query(
+          collection(db, 'schools'),
+          where('ownerId', '==', user.uid),
+        );
+        const q2 = query(
+          collection(db, 'schools'),
+          where('adminIds', 'array-contains', user.uid),
+        );
+        // run both queries and merge unique IDs
+        const [snap1, snap2] = await Promise.all([getDocs(q), getDocs(q2)]);
+        const ids = new Set<string>();
+        snap1.forEach(doc => ids.add(doc.id));
+        snap2.forEach(doc => ids.add(doc.id));
+
+        if (ids.size === 0) {
+          setError('No schools found for your account.');
+        } else if (ids.size === 1) {
+          const schoolId = Array.from(ids)[0];
+          navigate(`/admin/${schoolId}`, { replace: true });
+        } else {
+          // multiple: send to a selection page
+          // you’ll need to build /admin/select that reads the same queries
+          navigate('/admin/select', { state: { schoolIds: Array.from(ids) } });
+        }
+      } catch (err: any) {
+        setError(err.message || 'Failed to lookup your schools.');
       }
     }
-  }, [user, loading, navigate]);
+
+    if (!loading && user) {
+      handleRedirect();
+    }
+  }, [user, loading, db, navigate]);
 
   const handleEmail = async (e: React.FormEvent) => {
     e.preventDefault();

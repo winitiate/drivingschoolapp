@@ -1,7 +1,7 @@
 // src/components/ProtectedAdminRoute.tsx
 import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from '../auth/useAuth';
+import { useAuth } from '../../auth/useAuth';
 
 export default function ProtectedAdminRoute({
   redirectPath = '/admin/sign-in',

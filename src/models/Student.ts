@@ -9,6 +9,9 @@ export interface Student extends BaseEntity {
   /** Link back to users/{uid} */
   userId: string;
 
+  /** Which schools this student is enrolled in */
+  schoolIds: string[];
+
   licenceNumber: string;
   licenceClass: string;
 
