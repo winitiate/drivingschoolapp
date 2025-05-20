@@ -1,59 +1,23 @@
 // src/layouts/SuperAdminLayout.tsx
+
+/**
+ * SuperAdminLayout.tsx
+ *
+ * Layout wrapper for super-admin pages.
+ * Uses the shared Header (with dynamic menu) and Footer.
+ */
+
 import React from 'react';
-import { Outlet, Link as RouterLink } from 'react-router-dom';
-import { AppBar, Toolbar, Typography, Box, Button, Container } from '@mui/material';
+import { Outlet } from 'react-router-dom';
+import { Box, Container } from '@mui/material';
+import Header from '../components/Layout/Header';
 import Footer from '../components/Layout/Footer';
-import { useAuth } from '../auth/useAuth';
 
 export default function SuperAdminLayout() {
-  const { user, signOutUser } = useAuth();
-
-  const isSuperAdmin = user?.roles.includes('superAdmin');
-
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <AppBar position="static">
-        <Toolbar>
-          <Typography
-            variant="h6"
-            component={RouterLink}
-            to="/super-admin"
-            sx={{ color: 'inherit', textDecoration: 'none', flexGrow: 1 }}
-          >
-            Platform Admin
-          </Typography>
-
-          {isSuperAdmin ? (
-            <>
-              <Button
-                color="inherit"
-                component={RouterLink}
-                to="/super-admin"
-              >
-                Dashboard
-              </Button>
-              <Button
-                color="inherit"
-                component={RouterLink}
-                to="/super-admin/schools"
-              >
-                Manage Schools
-              </Button>
-              <Button color="inherit" onClick={signOutUser}>
-                Sign Out
-              </Button>
-            </>
-          ) : (
-            <Button
-              color="inherit"
-              component={RouterLink}
-              to="/super-admin/sign-in"
-            >
-              Sign In
-            </Button>
-          )}
-        </Toolbar>
-      </AppBar>
+      {/* Shared header with dynamic, role-aware menu */}
+      <Header />
 
       <Container
         component="main"

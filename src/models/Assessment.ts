@@ -1,4 +1,5 @@
 // src/models/Assessment.ts
+
 import { BaseEntity } from './BaseEntity';
 
 export interface Assessment extends BaseEntity {
@@ -9,4 +10,6 @@ export interface Assessment extends BaseEntity {
   overallRating: number;
   comments: string;
   attachments: string[];
+
+  customFields?: Record<string, any>;
 }

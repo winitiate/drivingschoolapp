@@ -1,9 +1,10 @@
 // src/models/Payment.ts
+
 import { BaseEntity } from './BaseEntity';
 
 export interface Payment extends BaseEntity {
   appointmentId: string;
-  studentId: string;
+  clientId: string;
 
   amount: number;
   currency: string;
@@ -14,11 +15,12 @@ export interface Payment extends BaseEntity {
   receiptUrl: string;
   processedAt: Date;
 
-  // Optional fields you asked for
   fees?: number;
   netTotal?: number;
   tenderNote?: string;
   cardBrand?: string;
   panSuffix?: string;
   detailsUrl?: string;
+
+  customFields?: Record<string, any>;
 }

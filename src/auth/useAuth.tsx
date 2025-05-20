@@ -1,13 +1,19 @@
 // src/auth/useAuth.tsx
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode
+} from 'react';
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  User as FirebaseUser,
+  signOut as firebaseSignOut
 } from 'firebase/auth';
 import {
   doc,
@@ -15,7 +21,7 @@ import {
   getDocFromServer,
   setDoc,
   updateDoc,
-  serverTimestamp,
+  serverTimestamp
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
@@ -26,6 +32,10 @@ export interface AuthUser {
   firstName?: string;
   lastName?: string;
   phone?: string;
+
+  // Now supports multiple memberships:
+  businessIds: string[];
+  serviceLocationIds: string[];
 }
 
 interface AuthContextType {
@@ -33,7 +43,12 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signUp: (email: string, password: string, roles: string[]) => Promise<void>;
+  signUp: (
+    email: string,
+    password: string,
+    roles: string[],
+    businessId?: string
+  ) => Promise<void>;
   signOutUser: () => Promise<void>;
 }
 
@@ -45,11 +60,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const googleProvider = new GoogleAuthProvider();
 
   useEffect(() => {
-    console.warn('✅ useAuth: registering onAuthStateChanged listener');
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      console.warn('🌀 useAuth: onAuthStateChanged →', fbUser);
       setLoading(true);
-
       if (!fbUser) {
         setUser(null);
         setLoading(false);
@@ -58,39 +70,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const uid = fbUser.uid;
       const ref = doc(db, 'users', uid);
-      console.warn('🔍 useAuth: fetching profile for', uid);
-
       let snap;
       try {
-        // Try a one-off GET (avoids streaming Listen channel entirely)
         snap = await getDocFromServer(ref);
-        console.warn('📄 useAuth: got server snapshot', snap.exists(), snap.data());
-      } catch (err) {
-        console.warn('⚠️ useAuth: getDocFromServer failed, falling back to getDoc', err);
+      } catch {
         snap = await getDoc(ref);
-        console.warn('📄 useAuth: got fallback snapshot', snap.exists(), snap.data());
       }
 
       if (!snap.exists()) {
-        console.warn('⚠️ useAuth: no profile, signing out');
         await firebaseSignOut(auth);
         setUser(null);
       } else {
         const data = snap.data() as any;
+
+        // Normalize to arrays (legacy support for single businessId)
+        const businessIds: string[] = Array.isArray(data.businessIds)
+          ? data.businessIds
+          : data.businessId
+            ? [data.businessId]
+            : [];
+
+        const serviceLocationIds: string[] = Array.isArray(data.serviceLocationIds)
+          ? data.serviceLocationIds
+          : [];
+
         setUser({
           uid,
           email: fbUser.email,
           roles: Array.isArray(data.roles) ? data.roles : [],
           firstName: data.firstName,
-          lastName:  data.lastName,
-          phone:     data.phone,
+          lastName: data.lastName,
+          phone: data.phone,
+          businessIds,
+          serviceLocationIds
         });
       }
-
       setLoading(false);
     });
 
-    console.warn('✅ useAuth: listener set up');
     return unsubscribe;
   }, []);
 
@@ -102,30 +119,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const fbUser = result.user;
     const uid = fbUser.uid;
     const ref = doc(db, 'users', uid);
-
-    // Upsert the user record
     const snap = await getDoc(ref);
+
     if (!snap.exists()) {
       await setDoc(ref, {
         uid,
-        email:     fbUser.email,
-        roles:     ['student'],
+        email: fbUser.email,
+        roles: ['client'],            // default role
+        businessIds: [],
+        serviceLocationIds: [],
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       });
     } else {
       await updateDoc(ref, { updatedAt: serverTimestamp() });
     }
   };
 
-  const signUp = async (email: string, password: string, roles: string[]) => {
+  const signUp = async (
+    email: string,
+    password: string,
+    roles: string[],
+    businessId?: string
+  ) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await setDoc(doc(db, 'users', cred.user.uid), {
-      uid:       cred.user.uid,
+    const ref = doc(db, 'users', cred.user.uid);
+    await setDoc(ref, {
+      uid: cred.user.uid,
       email,
       roles,
+      businessIds: businessId ? [businessId] : [],
+      serviceLocationIds: [],
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     });
   };
 

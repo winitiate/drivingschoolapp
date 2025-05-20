@@ -1,32 +1,62 @@
 // src/App.tsx
+
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './auth/useAuth';
 
-import MainLayout       from './layouts/MainLayout';
-import AdminLayout      from './layouts/AdminLayout';
-import InstructorLayout from './layouts/InstructorLayout';
+import ClientLayout from './layouts/ClientLayout';
+import ServiceLocationAdminLayout from './layouts/ServiceLocationAdminLayout';
+import ServiceProviderLayout from './layouts/ServiceProviderLayout';
 import SuperAdminLayout from './layouts/SuperAdminLayout';
+import BusinessOwnerLayout from './layouts/BusinessOwnerLayout';
 
-import ProtectedStudentRoute    from './components/Auth/ProtectedStudentRoute';
-import ProtectedAdminRoute      from './components/Auth/ProtectedAdminRoute';
-import ProtectedInstructorRoute from './components/Auth/ProtectedInstructorRoute';
+import ProtectedClientRoute from './components/Auth/ProtectedClientRoute';
+import ProtectedServiceLocationAdminRoute from './components/Auth/ProtectedServiceLocationAdminRoute';
+import ProtectedServiceProviderRoute from './components/Auth/ProtectedServiceProviderRoute';
 import ProtectedSuperAdminRoute from './components/Auth/ProtectedSuperAdminRoute';
+import ProtectedBusinessOwnerRoute from './components/Auth/ProtectedBusinessOwnerRoute';
 
-import Home            from './pages/Home';
-import SignIn          from './pages/SignIn';
-import SignUp          from './pages/SignUp';
-import StudentDashboard   from './pages/StudentDashboard';
+// ─── Business Owner pages ────────────────────────────────────────────
+import BusinessSignIn          from './pages/Business/BusinessSignIn';
+import BusinessSignUp          from './pages/Business/BusinessSignUp';
+import BusinessDashboard       from './pages/Business/BusinessDashboard';
+import ManageServiceLocations  from './pages/Business/ManageServiceLocations';
+import BusinessFormTemplates   from './pages/Business/BusinessFormTemplates';
 
-import AdminSignIn         from './pages/AdminSignIn';
-import SchoolAdminDashboard from './pages/SchoolAdminDashboard';  // updated import
+// ─── Client pages ────────────────────────────────────────────────────
+import ClientHomePage          from './pages/Client/ClientHomePage';
+import ClientSignIn            from './pages/Client/ClientSignIn';
+import ClientSignUp            from './pages/Client/ClientSignUp';
+import ClientDashboard         from './pages/Client/ClientDashboard';
+import ClientProfile           from './pages/Client/ClientProfile';
+import ClientFormTemplates     from './pages/Client/ClientFormTemplates';
 
-import InstructorSignIn     from './pages/InstructorSignIn';
-import InstructorDashboard  from './pages/InstructorDashboard';
+// ─── Service-Location Admin pages ───────────────────────────────────
+import ServiceLocationSignIn        from './pages/ServiceLocation/ServiceLocationSignIn';
+import ServiceLocationDashboard     from './pages/ServiceLocation/ServiceLocationDashboard';
+import ClientsManager               from './pages/ServiceLocation/Clients/ClientsManager';
+import ProvidersManager             from './pages/ServiceLocation/ServiceProviders/ServiceProvidersManager';
+import AppointmentsManager          from './pages/ServiceLocation/Appointments/AppointmentsManager';
+import AppointmentTypesManager      from './pages/ServiceLocation/Settings/AppointmentTypes/AppointmentTypesManager';
+import AssessmentTypesManager       from './pages/ServiceLocation/Settings/AssessmentTypes/AssessmentTypesManager';
+import GradingScalesManager         from './pages/ServiceLocation/Settings/GradingScales/GradingScalesManager';
+import PackageSettings              from './pages/ServiceLocation/Settings/PackageSettings/PackageSettings';
+import BusinessHoursSettings        from './pages/ServiceLocation/Settings/BusinessHours/BusinessHoursSettings';
+import FAQSettings                  from './pages/ServiceLocation/Settings/FAQSettings/FAQSettings';
+import SquareUpSettings             from './pages/ServiceLocation/Settings/SquareUpSettings/SquareUpSettings';
+import ServiceLocationAdminSettings from './pages/ServiceLocation/Settings/ServiceLocationAdminSettings/ServiceLocationAdminSettings';
+import ServiceLocationFormTemplates from './pages/ServiceLocation/Settings/FormTemplates/FormTemplatesManager';
 
-import SuperAdminSignIn     from './pages/SuperAdminSignIn';
-import SuperAdminDashboard  from './pages/SuperAdminDashboard';
-import ManageSchools        from './pages/ManageSchools';
+// ─── Service-Provider pages ──────────────────────────────────────────
+import ServiceProviderSignIn         from './pages/ServiceProvider/ServiceProviderSignIn';
+import ServiceProviderDashboard      from './pages/ServiceProvider/ServiceProviderDashboard';
+import ServiceProviderFormTemplates  from './pages/ServiceProvider/ServiceProviderFormTemplates';
+
+// ─── Super-Admin pages ───────────────────────────────────────────────
+import SuperAdminSignIn         from './pages/SuperAdmin/SuperAdminSignIn';
+import SuperAdminDashboard      from './pages/SuperAdmin/SuperAdminDashboard';
+import ManageBusinesses         from './pages/SuperAdmin/ManageBusinesses';
+import SuperAdminFormTemplates  from './pages/SuperAdmin/SuperAdminFormTemplates';
 
 export default function App() {
   return (
@@ -34,42 +64,147 @@ export default function App() {
       <BrowserRouter>
         <Routes>
 
-          {/* Public + Student */}
-          <Route element={<MainLayout />}>
-            <Route path="/"        element={<Home />} />
-            <Route path="/sign-in" element={<SignIn />} />
-            <Route path="/sign-up" element={<SignUp />} />
-            <Route element={<ProtectedStudentRoute />}>
-              <Route path="/student" element={<StudentDashboard />} />
+          {/* ── Business Owner ───────────────────────────────────────────── */}
+          <Route element={<BusinessOwnerLayout />}>
+            <Route path="/business/sign-in" element={<BusinessSignIn />} />
+            <Route path="/business/sign-up" element={<BusinessSignUp />} />
+
+            <Route element={<ProtectedBusinessOwnerRoute />}>
+              <Route path="/business/:businessId" element={<BusinessDashboard />} />
+              <Route
+                path="/business/:businessId/service-locations"
+                element={<ManageServiceLocations />}
+              />
+              <Route
+                path="/business/:businessId/form-templates"
+                element={<BusinessFormTemplates />}
+              />
             </Route>
           </Route>
 
-          {/* School Admin */}
-          <Route element={<AdminLayout />}>
-            {/* public sign-in page */}
-            <Route path="/admin/sign-in" element={<AdminSignIn />} />
+          {/* ── Public + Client ───────────────────────────────────────────── */}
+          <Route element={<ClientLayout />}>
+            <Route path="/"        element={<ClientHomePage />} />
+            <Route path="/sign-in" element={<ClientSignIn />} />
+            <Route path="/sign-up" element={<ClientSignUp />} />
 
-            {/* all protected admin routes */}
-            <Route path="/admin" element={<ProtectedAdminRoute />}>
-              {/* dynamic school dashboard */}
-              <Route path=":schoolId" element={<SchoolAdminDashboard />} />
+            <Route element={<ProtectedClientRoute />}>
+              <Route path="/client"                element={<ClientDashboard />} />
+              <Route path="/client/profile"        element={<ClientProfile />} />
+              <Route path="/client/form-templates" element={<ClientFormTemplates />} />
             </Route>
           </Route>
 
-          {/* Instructor */}
-          <Route element={<InstructorLayout />}>
-            <Route path="/instructor/sign-in" element={<InstructorSignIn />} />
-            <Route element={<ProtectedInstructorRoute />}>
-              <Route path="/instructor" element={<InstructorDashboard />} />
+          {/* ── Service-Location Admin ───────────────────────────────────── */}
+          <Route element={<ServiceLocationAdminLayout />}>
+            <Route
+              path="/service-location/sign-in"
+              element={<ServiceLocationSignIn />}
+            />
+            <Route
+              element={
+                <ProtectedServiceLocationAdminRoute
+                  redirectPath="/service-location/sign-in"
+                />
+              }
+            >
+              <Route
+                path="/service-location/:serviceLocationId"
+                element={<ServiceLocationDashboard />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/clients"
+                element={<ClientsManager />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/providers"
+                element={<ProvidersManager />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/appointments"
+                element={<AppointmentsManager />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/settings/appointment-types"
+                element={<AppointmentTypesManager />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/settings/assessment-types"
+                element={<AssessmentTypesManager />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/settings/grading-scales"
+                element={<GradingScalesManager />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/settings/package-settings"
+                element={<PackageSettings />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/settings/business-hours"
+                element={<BusinessHoursSettings />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/settings/faq-settings"
+                element={<FAQSettings />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/settings/square-up-settings"
+                element={<SquareUpSettings />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/settings/admin-settings"
+                element={<ServiceLocationAdminSettings />}
+              />
+              <Route
+                path="/service-location/:serviceLocationId/settings/form-templates"
+                element={<ServiceLocationFormTemplates />}
+              />
             </Route>
           </Route>
 
-          {/* Super Admin */}
+          {/* ── Service-Provider ───────────────────────────────────────────── */}
+          <Route element={<ServiceProviderLayout />}>
+            <Route
+              path="/service-provider/sign-in"
+              element={<ServiceProviderSignIn />}
+            />
+            <Route
+              element={
+                <ProtectedServiceProviderRoute
+                  redirectPath="/service-provider/sign-in"
+                />
+              }
+            >
+              <Route
+                path="/service-provider"
+                element={<ServiceProviderDashboard />}
+              />
+              <Route
+                path="/service-provider/form-templates"
+                element={<ServiceProviderFormTemplates />}
+              />
+            </Route>
+          </Route>
+
+          {/* ── Super-Admin ───────────────────────────────────────────────── */}
           <Route path="/super-admin/sign-in" element={<SuperAdminSignIn />} />
-          <Route path="/super-admin" element={<ProtectedSuperAdminRoute />}>
+          <Route
+            path="/super-admin"
+            element={
+              <ProtectedSuperAdminRoute redirectPath="/super-admin/sign-in" />
+            }
+          >
             <Route element={<SuperAdminLayout />}>
               <Route index element={<SuperAdminDashboard />} />
-              <Route path="schools" element={<ManageSchools />} />
+              <Route
+                path="businesses"
+                element={<ManageBusinesses />}
+              />
+              <Route
+                path="form-templates"
+                element={<SuperAdminFormTemplates />}
+              />
             </Route>
           </Route>
 

@@ -1,7 +1,9 @@
-// src/components/ProtectedSuperAdminRoute.tsx
+// src/components/Auth/ProtectedSuperAdminRoute.tsx
+
 import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../../auth/useAuth';
+import { useAbility } from '../../hooks/useAbility';
 
 interface ProtectedSuperAdminRouteProps {
   redirectPath?: string;
@@ -11,22 +13,23 @@ export default function ProtectedSuperAdminRoute({
   redirectPath = '/super-admin/sign-in',
 }: ProtectedSuperAdminRouteProps) {
   const { user, loading } = useAuth();
+  const ability = useAbility();
 
-  // Show a spinner while we’re waiting for auth
+  // Show a loading indicator while auth state is resolving
   if (loading) {
     return <p>Loading…</p>;
   }
 
-  // Not signed in? Send to sign-in page
+  // Not signed in → redirect to sign-in
   if (!user) {
     return <Navigate to={redirectPath} replace />;
   }
 
-  // Signed in but missing the superAdmin role? Kick back to sign-in
-  if (!user.roles.includes('superAdmin')) {
+  // Must have the `manageBusinesses` permission (super-admin only)
+  if (!ability.can('manageBusinesses')) {
     return <Navigate to={redirectPath} replace />;
   }
 
-  // Authorized — render child routes
+  // Authorized — render nested routes
   return <Outlet />;
 }

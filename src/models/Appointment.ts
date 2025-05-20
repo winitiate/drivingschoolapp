@@ -1,17 +1,12 @@
 // src/models/Appointment.ts
-export interface Appointment {
-  /** BaseEntity fields */
-  id?: string;
-  createdAt: Date;
-  updatedAt: Date;
-  createdBy: string;
-  updatedBy: string;
 
-  /** Appointment-specific fields */
-  studentId: string;
-  instructorId: string;
+import { BaseEntity } from './BaseEntity';
+
+export interface Appointment extends BaseEntity {
+  clientId: string;
+  serviceProviderId: string;
   lessonTypeId: string;
-  schoolId: string;
+  serviceLocationId: string;
 
   startTime: Date;
   durationMinutes: number;
@@ -25,6 +20,10 @@ export interface Appointment {
 
   assessmentId?: string;
   paymentId?: string;
+
   notes: string;
   locationOverride?: string;
+
+  /** any extra per-business fields */
+  customFields?: Record<string, any>;
 }

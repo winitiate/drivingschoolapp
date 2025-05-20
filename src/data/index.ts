@@ -1,35 +1,80 @@
-// src/data/index.ts
-import type { StudentDriverStore } from "./StudentDriverStore";
-import { FirestoreStudentDriverStore } from "./FirestoreStudentDriverStore";
-import type { InstructorStore } from "./InstructorStore";
-import { FirestoreInstructorStore } from "./FirestoreInstructorStore";
-import type { AppointmentStore } from "./AppointmentStore";
-import { FirestoreAppointmentStore } from "./FirestoreAppointmentStore";
-import type { LessonTypeStore } from "./LessonTypeStore";
-import { FirestoreLessonTypeStore } from "./FirestoreLessonTypeStore";
-import type { SchoolStore } from "./SchoolStore";
-import { FirestoreSchoolStore } from "./FirestoreSchoolStore";
-import type { FAQStore } from "./FAQStore";
-import { FirestoreFAQStore } from "./FirestoreFAQStore";
-import type { AssessmentStore } from "./AssessmentStore";
-import { FirestoreAssessmentStore } from "./FirestoreAssessmentStore";
-import type { PaymentStore } from "./PaymentStore";
-import { FirestorePaymentStore } from "./FirestorePaymentStore";
-import type { VehicleStore } from "./VehicleStore";
-import { FirestoreVehicleStore } from "./FirestoreVehicleStore";
-import type { PackageStore } from "./PackageStore";
-import { FirestorePackageStore } from "./FirestorePackageStore";
-import type { NotificationStore } from "./NotificationStore";
-import { FirestoreNotificationStore } from "./FirestoreNotificationStore";
+/**
+ * data/index.ts
+ *
+ * Barrel file exporting all data store interfaces, implementations,
+ * and ready-to-use singleton instances.
+ */
 
-export const studentStore: StudentDriverStore = new FirestoreStudentDriverStore();
-export const instructorStore: InstructorStore = new FirestoreInstructorStore();
-export const appointmentStore: AppointmentStore = new FirestoreAppointmentStore();
-export const lessonTypeStore: LessonTypeStore = new FirestoreLessonTypeStore();
-export const schoolStore: SchoolStore = new FirestoreSchoolStore();
-export const faqStore: FAQStore = new FirestoreFAQStore();
-export const assessmentStore: AssessmentStore = new FirestoreAssessmentStore();
-export const paymentStore: PaymentStore = new FirestorePaymentStore();
-export const vehicleStore: VehicleStore = new FirestoreVehicleStore();
-export const packageStore: PackageStore = new FirestorePackageStore();
-export const notificationStore: NotificationStore = new FirestoreNotificationStore();
+// Interfaces & classes
+export * from "./AppointmentStore";
+export * from "./FirestoreAppointmentStore";
+
+export * from "./AppointmentTypeStore";
+export * from "./FirestoreAppointmentTypeStore";
+
+export * from "./AssessmentStore";
+export * from "./FirestoreAssessmentStore";
+
+export * from "./AssetStore";
+export * from "./FirestoreAssetStore";
+
+export * from "./BusinessStore";
+export * from "./FirestoreBusinessStore";
+
+export * from "./ClientStore";
+export * from "./FirestoreClientStore";
+
+export * from "./FAQStore";
+export * from "./FirestoreFAQStore";
+
+export * from "./FormTemplateStore";
+export * from "./FirestoreFormTemplateStore";
+
+export * from "./GradingScaleStore";
+export * from "./FirestoreGradingScaleStore";
+
+export * from "./NotificationStore";
+export * from "./FirestoreNotificationStore";
+
+export * from "./PackageStore";
+export * from "./FirestorePackageStore";
+
+export * from "./PaymentStore";
+export * from "./FirestorePaymentStore";
+
+export * from "./ServiceLocationStore";
+export * from "./FirestoreServiceLocationStore";
+
+export * from "./ServiceProviderStore";
+export * from "./FirestoreServiceProviderStore";
+
+// Singleton instances
+import { FirestoreAppointmentStore }       from "./FirestoreAppointmentStore";
+import { FirestoreAppointmentTypeStore }   from "./FirestoreAppointmentTypeStore";
+import { FirestoreAssessmentStore }        from "./FirestoreAssessmentStore";
+import { FirestoreAssetStore }             from "./FirestoreAssetStore";
+import { FirestoreBusinessStore }          from "./FirestoreBusinessStore";
+import { FirestoreClientStore }            from "./FirestoreClientStore";
+import { FirestoreFAQStore }               from "./FirestoreFAQStore";
+import { FirestoreFormTemplateStore }      from "./FirestoreFormTemplateStore";
+import { FirestoreGradingScaleStore }      from "./FirestoreGradingScaleStore";
+import { FirestoreNotificationStore }      from "./FirestoreNotificationStore";
+import { FirestorePackageStore }           from "./FirestorePackageStore";
+import { FirestorePaymentStore }           from "./FirestorePaymentStore";
+import { FirestoreServiceLocationStore }   from "./FirestoreServiceLocationStore";
+import { FirestoreServiceProviderStore }   from "./FirestoreServiceProviderStore";
+
+export const appointmentStore         = new FirestoreAppointmentStore();
+export const appointmentTypeStore     = new FirestoreAppointmentTypeStore();
+export const assessmentStore          = new FirestoreAssessmentStore();
+export const assetStore               = new FirestoreAssetStore();
+export const businessStore            = new FirestoreBusinessStore();
+export const clientStore              = new FirestoreClientStore();
+export const faqStore                 = new FirestoreFAQStore();
+export const formTemplateStore        = new FirestoreFormTemplateStore();
+export const gradingScaleStore        = new FirestoreGradingScaleStore();
+export const notificationStore        = new FirestoreNotificationStore();
+export const packageStore             = new FirestorePackageStore();
+export const paymentStore             = new FirestorePaymentStore();
+export const serviceLocationStore     = new FirestoreServiceLocationStore();
+export const serviceProviderStore     = new FirestoreServiceProviderStore();

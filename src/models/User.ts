@@ -1,6 +1,10 @@
 // src/models/User.ts
+
 import { BaseEntity } from './BaseEntity';
 
+/**
+ * Central auth/profile record (Firebase Auth UID ties to this).
+ */
 export interface User extends BaseEntity {
   /** Firebase Auth UID */
   uid: string;
@@ -11,9 +15,12 @@ export interface User extends BaseEntity {
   lastName?: string;
   phone?: string;
 
-  /** Coarse roles (can hold multiple) */
-  roles: string[]; // e.g. ['student','instructor','schoolAdmin','superAdmin']
+  /** Coarse roles (e.g. client, provider, admin) */
+  roles: string[];
 
-  /** Optional fine-grained per-school permissions */
-  permissions?: Record<string, string[]>; // { [schoolId]: ['manageCourses','viewReports',…] }
+  /**
+   * Optional fine-grained per-location permissions.
+   * { [serviceLocationId]: ['manageAppointments', 'viewReports', …] }
+   */
+  permissions?: Record<string, string[]>;
 }

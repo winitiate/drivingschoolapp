@@ -1,17 +1,16 @@
 // src/models/Package.ts
-export interface Package {
-  id?: string;
-  createdAt: Date;
-  updatedAt: Date;
-  createdBy: string;
-  updatedBy: string;
-  status: string;
 
+import { BaseEntity } from './BaseEntity';
+
+/**
+ * Generic package or bundled offer.
+ */
+export interface Package extends BaseEntity {
   name: string;
-  description: string;
+  description?: string;
   price: number;
-  lessonTypeIds: string[];
-  lessonCount: number;
-  expiryDate: Date;
-  studentAssignments: string[];
+  /** Which location owns this package */
+  serviceLocationId: string;
+
+  customFields?: Record<string, any>;
 }
