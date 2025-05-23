@@ -1,35 +1,35 @@
 // src/components/Auth/ProtectedServiceProviderRoute.tsx
 
-/**
- * ProtectedServiceProviderRoute.tsx
- *
- * Restricts access to service-provider-only routes.
- * Uses RBAC via ability.can('viewOwnTemplates').
- */
+import React from 'react'
+import { Navigate, Outlet, useParams } from 'react-router-dom'
+import { useAuth } from '../../auth/useAuth'
 
-import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from '../../auth/useAuth';
-import { useAbility } from '../../hooks/useAbility';
+export default function ProtectedServiceProviderRoute() {
+  const { user } = useAuth()
+  const { id } = useParams<{ id: string }>()
 
-interface ProtectedServiceProviderRouteProps {
-  redirectPath?: string;
-}
-
-export default function ProtectedServiceProviderRoute({
-  redirectPath = '/provider/sign-in',
-}: ProtectedServiceProviderRouteProps) {
-  const { user, loading } = useAuth();
-  const ability = useAbility();
-
-  if (loading) {
-    return <p>Loading…</p>;
+  if (!user || !user.roles.includes('serviceProvider')) {
+    return <Navigate to="/sign-in" replace />
   }
 
-  // Must be signed in and have the provider/client template-view permission
-  if (!user || !ability.can('viewOwnTemplates')) {
-    return <Navigate to={redirectPath} replace />;
+  const provIds = user.providerLocationIds || []
+
+  if (!id) {
+    if (provIds.length === 0) {
+      return <Navigate to="/" replace />
+    }
+    if (provIds.length === 1) {
+      return <Navigate to={`/service-provider/${provIds[0]}`} replace />
+    }
+    return <Outlet />
   }
 
-  return <Outlet />;
+  if (provIds.includes(id)) {
+    return <Outlet />
+  }
+
+  if (provIds.length > 1) {
+    return <Navigate to="/service-provider" replace />
+  }
+  return <Navigate to="/" replace />
 }

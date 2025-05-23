@@ -13,7 +13,7 @@ import { useParams } from 'react-router-dom';
 import { Box, Typography, Button, CircularProgress, Alert } from '@mui/material';
 
 import ClientFormDialog from '../../../components/Clients/ClientFormDialog';
-import ClientsTable, { ClientsTableProps } from '../../../components/Clients/ClientsTable';
+import ClientsTable, { ClientsTableProps } from './ClientsTable';
 
 import { FirestoreClientStore } from '../../../data/FirestoreClientStore';
 import type { Client } from '../../../models/Client';
@@ -47,7 +47,7 @@ export default function ClientsManager() {
         list.map(async (c) => {
           if (!map[c.userId]) {
             const snap = await getDoc(doc(db, 'users', c.userId));
-            const data = snap.exists() ? snap.data() as any : {};
+            const data = snap.exists() ? (snap.data() as any) : {};
             map[c.userId] = {
               firstName: data.firstName || '',
               lastName:  data.lastName  || '',
@@ -71,15 +71,15 @@ export default function ClientsManager() {
   const handleSave = async (data: Partial<Client>) => {
     if (!serviceLocationId) return;
     try {
-      // merge serviceLocationIds array
-      const base = editing || ({ serviceLocationIds: [] } as Client);
+      // merge clientLocationIds array
+      const base = editing || ({ clientLocationIds: [] } as Client);
       const newIds = Array.from(
-        new Set([...(base.serviceLocationIds || []), serviceLocationId])
+        new Set([...(base.clientLocationIds || []), serviceLocationId])
       );
       const client: Client = {
         ...(base.id ? base : (data as Client)),
         ...data,
-        serviceLocationIds: newIds,
+        clientLocationIds: newIds,
       };
       await store.save(client);
       setDialogOpen(false);

@@ -21,7 +21,7 @@ import {
   Typography,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
-import { Client } from '../../models/Client';
+import { Client } from '../../../models/Client';
 
 export interface ClientsTableProps {
   /** Array of clients to display */

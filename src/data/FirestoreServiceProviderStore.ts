@@ -5,7 +5,7 @@
  *
  * Firestore-based implementation of the ServiceProviderStore interface.
  * Uses the “serviceProviders” collection in Firestore and assumes each
- * document has a `serviceLocationIds: string[]` field for scoping providers.
+ * document has a `providerLocationIds: string[]` field for scoping providers.
  *
  * Implements ServiceProviderStore to keep signatures in sync.
  */
@@ -29,7 +29,6 @@ import { ServiceProviderStore } from "./ServiceProviderStore";
 const SERVICE_PROVIDERS_COLLECTION = "serviceProviders";
 
 export class FirestoreServiceProviderStore implements ServiceProviderStore {
-  // Reference to the Firestore “serviceProviders” collection
   private db = getFirestore();
   private collRef: CollectionReference = collection(
     this.db,
@@ -71,7 +70,6 @@ export class FirestoreServiceProviderStore implements ServiceProviderStore {
    */
   async save(provider: ServiceProvider): Promise<void> {
     const now = Timestamp.now();
-    // Determine doc ID: existing or new
     const id = provider.id || doc(this.collRef).id;
     const ref: DocumentReference = doc(
       this.db,
@@ -109,7 +107,7 @@ export class FirestoreServiceProviderStore implements ServiceProviderStore {
   ): Promise<ServiceProvider[]> {
     const q = query(
       this.collRef,
-      where("serviceLocationIds", "array-contains", serviceLocationId)
+      where("providerLocationIds", "array-contains", serviceLocationId)
     );
     const snaps = await getDocs(q);
     return snaps.docs.map((d) => ({
@@ -118,4 +116,3 @@ export class FirestoreServiceProviderStore implements ServiceProviderStore {
     }));
   }
 }
-

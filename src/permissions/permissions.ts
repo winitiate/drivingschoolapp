@@ -35,7 +35,6 @@ export type Action =
   | 'viewOwnTemplates'
   ;
 
-// Map each action to the roles allowed to perform it
 export const permissionMap: Record<Action, Role[]> = {
   viewHome:                ['superAdmin','business','serviceLocationAdmin','serviceProvider','client'],
 
@@ -65,10 +64,6 @@ export const permissionMap: Record<Action, Role[]> = {
  * can()
  *   Determines if a given user may perform an action, optionally
  *   scoped to a resource owner (business or serviceLocation).
- *
- * @param user     The authenticated user (with roles, businessIds, serviceLocationIds)
- * @param action   The action being attempted
- * @param resource Optional: { ownerType, ownerId } to enforce ABAC
  */
 export function can(
   user: AuthUser | null,
@@ -83,22 +78,28 @@ export function can(
     return true;
   }
 
-  // 2) Attribute-Based Access Control (ABAC) for business-scoped resources
+  // 2) ABAC for business-scoped resources
   if (resource?.ownerType === 'business' && resource.ownerId) {
-    if (user.businessIds.includes(resource.ownerId)) {
+    if (
+      user.ownedBusinessIds.includes(resource.ownerId) ||
+      user.memberBusinessIds.includes(resource.ownerId)
+    ) {
       return true;
     }
   }
 
   // 3) ABAC for service-location-scoped resources
   if (resource?.ownerType === 'serviceLocation' && resource.ownerId) {
-    if (user.serviceLocationIds.includes(resource.ownerId)) {
+    if (
+      user.ownedLocationIds.includes(resource.ownerId) ||
+      user.adminLocationIds.includes(resource.ownerId) ||
+      user.providerLocationIds.includes(resource.ownerId) ||
+      user.clientLocationIds.includes(resource.ownerId)
+    ) {
       return true;
     }
   }
 
   // 4) Global resources (no ownerType) rely solely on RBAC
-  // if ownerType === 'global', RBAC above applied
-
   return false;
 }

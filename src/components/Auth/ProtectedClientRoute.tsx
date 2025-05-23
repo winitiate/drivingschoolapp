@@ -1,36 +1,35 @@
 // src/components/Auth/ProtectedClientRoute.tsx
 
-/**
- * ProtectedClientRoute.tsx
- *
- * Restricts access to client-only routes.
- * Uses RBAC via ability.can('viewOwnTemplates').
- */
+import React from 'react'
+import { Navigate, Outlet, useParams } from 'react-router-dom'
+import { useAuth } from '../../auth/useAuth'
 
-import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from '../../auth/useAuth';
-import { useAbility } from '../../hooks/useAbility';
+export default function ProtectedClientRoute() {
+  const { user } = useAuth()
+  const { id } = useParams<{ id: string }>()
 
-interface ProtectedClientRouteProps {
-  /** Path to redirect unauthenticated or unauthorized users to */
-  redirectPath?: string;
-}
-
-export default function ProtectedClientRoute({
-  redirectPath = '/sign-in',
-}: ProtectedClientRouteProps) {
-  const { user, loading } = useAuth();
-  const ability = useAbility();
-
-  if (loading) {
-    return <p>Loading…</p>;
+  if (!user || !user.roles.includes('client')) {
+    return <Navigate to="/sign-in" replace />
   }
 
-  // Must be signed in and have the 'viewOwnTemplates' permission (client or provider)
-  if (!user || !ability.can('viewOwnTemplates')) {
-    return <Navigate to={redirectPath} replace />;
+  const clientIds = user.clientLocationIds || []
+
+  if (!id) {
+    if (clientIds.length === 0) {
+      return <Navigate to="/" replace />
+    }
+    if (clientIds.length === 1) {
+      return <Navigate to={`/client/${clientIds[0]}`} replace />
+    }
+    return <Outlet />
   }
 
-  return <Outlet />;
+  if (clientIds.includes(id)) {
+    return <Outlet />
+  }
+
+  if (clientIds.length > 1) {
+    return <Navigate to="/client" replace />
+  }
+  return <Navigate to="/" replace />
 }

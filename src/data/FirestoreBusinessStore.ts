@@ -1,5 +1,4 @@
-// src/data/FirestoreBusinessStore.ts
-
+// src\data\FirestoreBusinessStore.ts
 import {
   getFirestore,
   collection,
@@ -7,7 +6,9 @@ import {
   getDoc,
   getDocs,
   setDoc,
-  Timestamp
+  Timestamp,
+  CollectionReference,
+  DocumentReference
 } from 'firebase/firestore';
 import { Business } from '../models/Business';
 import { BusinessStore } from './BusinessStore';
@@ -16,7 +17,7 @@ const BUSINESSES_COLLECTION = 'businesses';
 
 export class FirestoreBusinessStore implements BusinessStore {
   private db = getFirestore();
-  private coll = collection(this.db, BUSINESSES_COLLECTION);
+  private coll: CollectionReference = collection(this.db, BUSINESSES_COLLECTION);
 
   async getById(id: string): Promise<Business | null> {
     const snap = await getDoc(doc(this.db, BUSINESSES_COLLECTION, id));
@@ -31,23 +32,30 @@ export class FirestoreBusinessStore implements BusinessStore {
 
   async save(business: Business): Promise<void> {
     const now = Timestamp.now();
-    // Destructure out `id` so it isn't included in the document fields
+    // Destructure out `id` so it isn't in the document fields
     const { id, ...data } = business;
 
     // Choose existing doc or new auto‐ID
-    const ref = id
+    const ref: DocumentReference = id
       ? doc(this.db, BUSINESSES_COLLECTION, id)
       : doc(this.coll);
 
-    // Convert any Date fields to Firestore Timestamp and merge
+    // Convert any Date fields (createdAt) to Firestore Timestamp
+    const createdAtTs = business.createdAt
+      ? (business.createdAt instanceof Date
+          ? Timestamp.fromDate(business.createdAt)
+          : business.createdAt)
+      : now;
+
     await setDoc(
       ref,
       {
         ...data,
-        createdAt: business.createdAt
-          ? Timestamp.fromDate(business.createdAt)
-          : now,
-        updatedAt: now
+        // copy through ownerId & ownerEmail as-is
+        ownerId:    business.ownerId,
+        ownerEmail: business.ownerEmail,
+        createdAt:  createdAtTs,
+        updatedAt:  now
       },
       { merge: true }
     );

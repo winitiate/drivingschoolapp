@@ -11,7 +11,7 @@ export interface Client extends BaseEntity {
   userId: string;
 
   /** Which locations they belong to */
-  serviceLocationIds: string[];
+  clientLocationIds: string[];
 
   /** Arbitrary per-location/client data */
   customFields?: Record<string, any>;

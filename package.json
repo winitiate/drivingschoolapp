@@ -28,7 +28,9 @@
     "lucide-react": "^0.510.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-hook-form": "^7.56.4",
     "react-router-dom": "^7.6.0",
+    "square": "^42.3.0",
     "uuid": "^11.1.0"
   },
   "devDependencies": {

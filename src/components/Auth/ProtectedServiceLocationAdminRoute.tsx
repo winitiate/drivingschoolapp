@@ -1,51 +1,51 @@
 // src/components/Auth/ProtectedServiceLocationAdminRoute.tsx
 
-/**
- * ProtectedServiceLocationAdminRoute.tsx
- *
- * Restricts access to service-location-admin routes.
- * Uses both RBAC and ABAC: only users with the
- * 'serviceLocationAdmin' role and membership in the
- * specified serviceLocation can access.
- */
+import React from 'react'
+import { Navigate, Outlet, useParams } from 'react-router-dom'
+import { useAuth } from '../../auth/useAuth'
 
-import React from 'react';
-import { Navigate, Outlet, useParams } from 'react-router-dom';
-import { useAuth } from '../../auth/useAuth';
-import { useAbility } from '../../hooks/useAbility';
+export default function ProtectedServiceLocationAdminRoute() {
+  const { user } = useAuth()
+  const { serviceLocationId } = useParams<{ serviceLocationId: string }>()
 
-interface ProtectedServiceLocationAdminRouteProps {
-  /** Where to redirect if not authorized */
-  redirectPath?: string;
-}
-
-export default function ProtectedServiceLocationAdminRoute({
-  redirectPath = '/service-location/sign-in',
-}: ProtectedServiceLocationAdminRouteProps) {
-  const { user, loading } = useAuth();
-  const ability = useAbility();
-  const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
-
-  // Show a loading indicator while auth state is resolving
-  if (loading) {
-    return <p>Loading…</p>;
+  if (!user || !user.roles.includes('serviceLocationAdmin')) {
+    // not signed in or not a service-location admin → send to sign-in
+    return <Navigate to="/sign-in" replace />
   }
 
-  // Must be signed in
-  if (!user) {
-    return <Navigate to={redirectPath} replace />;
+  // combine owned + admin IDs
+  const locIds = Array.from(
+    new Set([
+      ...(user.ownedLocationIds || []),
+      ...(user.adminLocationIds || []),
+    ])
+  )
+
+  // no `:serviceLocationId` in URL → decide where to go
+  if (!serviceLocationId) {
+    if (locIds.length === 0) {
+      return <Navigate to="/" replace />
+    }
+    if (locIds.length === 1) {
+      return (
+        <Navigate
+          to={`/service-location/${locIds[0]}`}
+          replace
+        />
+      )
+    }
+    // multiple → show selector
+    return <Outlet />
   }
 
-  // Must have the 'serviceLocationAdmin' role and belong to the location
-  const allowed = ability.can(
-    'manageLocationTemplates',
-    { ownerType: 'serviceLocation', ownerId: serviceLocationId }
-  );
-
-  if (!allowed) {
-    return <Navigate to={redirectPath} replace />;
+  // detail route: `:serviceLocationId` present
+  if (locIds.includes(serviceLocationId)) {
+    return <Outlet />
   }
 
-  // Authorized — render nested routes
-  return <Outlet />;
+  // invalid `:serviceLocationId`
+  if (locIds.length > 1) {
+    return <Navigate to="/service-location" replace />
+  }
+  return <Navigate to="/" replace />
 }

@@ -4,7 +4,7 @@
  * ManageServiceLocations.tsx
  *
  * Business-owner interface for managing service locations.
- * Fetches only locations owned by this business and allows adding, editing, and toggling status.
+ * Fetches only locations belonging to this business and allows adding, editing, and toggling status.
  */
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
@@ -18,49 +18,74 @@ import {
   Alert,
 } from '@mui/material';
 
-import ServiceLocationFormDialog from '../../components/ServiceLocations/ServiceLocationFormDialog';
-import ServiceLocationsTable from '../../components/ServiceLocations/ServiceLocationsTable';
+import ServiceLocationFormDialog from '../ServiceLocation/ServiceLocationFormDialog';
+import ServiceLocationsTable from '../ServiceLocation/ServiceLocationsTable';
 
 import { FirestoreServiceLocationStore } from '../../data/FirestoreServiceLocationStore';
+import { FirestoreBusinessStore } from '../../data/FirestoreBusinessStore';
 import type { ServiceLocation } from '../../models/ServiceLocation';
+import type { Business } from '../../models/Business';
 
 export default function ManageServiceLocations() {
   const { businessId } = useParams<{ businessId: string }>();
-  const store = useMemo(() => new FirestoreServiceLocationStore(), []);
+  const serviceLocationStore = useMemo(() => new FirestoreServiceLocationStore(), []);
+  const businessStore = useMemo(() => new FirestoreBusinessStore(), []);
 
   const [serviceLocations, setServiceLocations] = useState<ServiceLocation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading]                   = useState(true);
+  const [error, setError]                       = useState<string | null>(null);
+
+  const [businessName, setBusinessName] = useState<string>('');
+  const [bizLoading, setBizLoading]     = useState(true);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<ServiceLocation | null>(null);
+  const [editing, setEditing]       = useState<ServiceLocation | null>(null);
 
-  // Fetch locations owned by this business
+  // Fetch business name by listing all and finding the one we want
+  useEffect(() => {
+    if (!businessId) return;
+    setBizLoading(true);
+    businessStore
+      .listAll()
+      .then((allBiz: Business[]) => {
+        const biz = allBiz.find(b => b.id === businessId);
+        setBusinessName(biz?.name || '');
+      })
+      .catch((e: any) => {
+        setError(e.message || 'Failed to load business');
+      })
+      .finally(() => {
+        setBizLoading(false);
+      });
+  }, [businessId, businessStore]);
+
+  // Fetch locations for this business
   const reloadLocations = useCallback(async () => {
+    if (!businessId) return;
     setLoading(true);
     setError(null);
     try {
-      const all = await store.listAll();
-      setServiceLocations(all.filter(loc => loc.ownerId === businessId));
+      const all = await serviceLocationStore.listAll();
+      setServiceLocations(all.filter(loc => loc.businessId === businessId));
     } catch (e: any) {
       setError(e.message || 'Failed to load service locations');
     } finally {
       setLoading(false);
     }
-  }, [store, businessId]);
+  }, [serviceLocationStore, businessId]);
 
   useEffect(() => {
-    if (!businessId) return;
     reloadLocations();
-  }, [businessId, reloadLocations]);
+  }, [reloadLocations]);
 
-  // Create or update a location (ensuring correct ownerId)
+  // Create or update a location, ensuring we set the correct businessId
   const handleSave = async (data: ServiceLocation) => {
+    if (!businessId) return;
     try {
-      await store.save({ ...data, ownerId: businessId! });
+      await serviceLocationStore.save({ ...data, businessId });
       reloadLocations();
     } catch (e: any) {
-      setError(e.message);
+      setError(e.message || 'Save failed');
     }
   };
 
@@ -77,7 +102,23 @@ export default function ManageServiceLocations() {
         justifyContent="space-between"
         alignItems="center"
       >
-        <Typography variant="h4">My Service Locations</Typography>
+        {bizLoading ? (
+          <Box display="flex" alignItems="center">
+            <CircularProgress size={24} />
+            <Typography
+              variant="h4"
+              component="span"
+              sx={{ ml: 2 }}
+            >
+              Service Locations
+            </Typography>
+          </Box>
+        ) : (
+          <Typography variant="h4">
+            {businessName} Service Locations
+          </Typography>
+        )}
+
         <Button
           variant="contained"
           onClick={() => {
@@ -114,6 +155,7 @@ export default function ManageServiceLocations() {
 
       <ServiceLocationFormDialog
         open={dialogOpen}
+        businessId={businessId!}
         initialData={editing || undefined}
         onClose={() => setDialogOpen(false)}
         onSave={(loc) => {

@@ -2,8 +2,16 @@
 
 import { BaseEntity } from './BaseEntity';
 
+export type UserRole =
+  | 'superAdmin'
+  | 'businessOwner'
+  | 'locationAdmin'
+  | 'serviceProvider'
+  | 'client';
+
 /**
  * Central auth/profile record (Firebase Auth UID ties to this).
+ * Extends BaseEntity so we get createdAt/updatedAt/status/etc.
  */
 export interface User extends BaseEntity {
   /** Firebase Auth UID */
@@ -15,12 +23,31 @@ export interface User extends BaseEntity {
   lastName?: string;
   phone?: string;
 
-  /** Coarse roles (e.g. client, provider, admin) */
-  roles: string[];
+  /** Global capability roles */
+  roles: UserRole[];
 
-  /**
-   * Optional fine-grained per-location permissions.
-   * { [serviceLocationId]: ['manageAppointments', 'viewReports', …] }
+  /** 
+   * Businesses they own (role includes 'businessOwner') 
+   * or belong to as staff/admin.
    */
+  ownedBusinessIds: string[];
+  memberBusinessIds: string[];
+
+  /** 
+   * Service‐locations they own outright 
+   * (e.g. subsite owners).
+   */
+  ownedLocationIds: string[];
+
+  /** Service‐locations they administer (role includes 'locationAdmin') */
+  adminLocationIds: string[];
+
+  /** Service‐locations they deliver services at (role includes 'serviceProvider') */
+  providerLocationIds: string[];
+
+  /** Service‐locations where they are a client (role includes 'client') */
+  clientLocationIds: string[];
+
+  /** Per-location granular permissions, if you still need them */
   permissions?: Record<string, string[]>;
 }

@@ -5,7 +5,7 @@
  *
  * Firestore-based implementation of the ClientStore interface.
  * Uses the “clients” collection in Firestore and assumes each Client
- * document has a `serviceLocationIds: string[]` field for scoping.
+ * document has a `clientLocationIds: string[]` field for scoping.
  *
  * Implements ClientStore to ensure method signatures stay in sync.
  */
@@ -62,7 +62,6 @@ export class FirestoreClientStore implements ClientStore {
    */
   async save(client: Client): Promise<void> {
     const now = Timestamp.now();
-    // Determine whether to use existing ID or let Firestore generate one
     const ref = client.id
       ? doc(db, CLIENTS_COLLECTION, client.id)
       : doc(this.collRef);
@@ -93,10 +92,9 @@ export class FirestoreClientStore implements ClientStore {
   ): Promise<Client[]> {
     const q = query(
       this.collRef,
-      where("serviceLocationIds", "array-contains", serviceLocationId)
+      where("clientLocationIds", "array-contains", serviceLocationId)
     );
     const snaps = await getDocs(q);
     return snaps.docs.map(d => ({ id: d.id, ...(d.data() as Client) }));
   }
 }
-
