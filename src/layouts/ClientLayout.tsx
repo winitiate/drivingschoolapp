@@ -1,18 +1,15 @@
 // src/layouts/ClientLayout.tsx
 
-/**
- * ClientLayout.tsx
- *
- * Layout wrapper for client pages.
- * Uses the shared Header (with dynamic menu) and Footer.
- */
-
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Box, Container } from '@mui/material';
 import Header from '../components/Layout/Header';
 import Footer from '../components/Layout/Footer';
 
+/**
+ * Layout wrapper for client pages.
+ * Uses the shared Header (with dynamic menu) and Footer.
+ */
 export default function ClientLayout() {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -20,6 +17,7 @@ export default function ClientLayout() {
       <Header />
 
       <Container component="main" sx={{ flex: 1, p: 3, maxWidth: 800, mx: 'auto' }}>
+        {/* Renders ClientSelect or ClientDashboard */}
         <Outlet />
       </Container>
 

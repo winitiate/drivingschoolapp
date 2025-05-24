@@ -12,23 +12,16 @@ import ManageBusinesses        from '../pages/SuperAdmin/BusinessManagement/Mana
 import SuperAdminFormTemplates from '../pages/SuperAdmin/SuperAdminFormTemplates'
 
 export const SuperAdminRoutes = (
-  <>
-    {/* Public sign-in (not guarded) */}
-    <Route
-      path="super-admin/sign-in"
-      element={<SuperAdminSignIn />}
-    />
-
-    {/* Protected super-admin pages */}
-    <Route
-      path="super-admin"
-      element={<ProtectedSuperAdminRoute />}
-    >
-      <Route element={<SuperAdminLayout />}>
-        <Route index element={<SuperAdminDashboard />} />
-        <Route path="businesses" element={<ManageBusinesses />} />
-        <Route path="form-templates" element={<SuperAdminFormTemplates />} />
-      </Route>
+  <Route path="super-admin" element={<ProtectedSuperAdminRoute redirectPath="super-admin/sign-in" />}>
+    <Route element={<SuperAdminLayout />}>
+      {/* /super-admin/sign-in */}
+      <Route path="sign-in" element={<SuperAdminSignIn />} />
+      {/* /super-admin */}
+      <Route index element={<SuperAdminDashboard />} />
+      {/* /super-admin/businesses */}
+      <Route path="businesses" element={<ManageBusinesses />} />
+      {/* /super-admin/form-templates */}
+      <Route path="form-templates" element={<SuperAdminFormTemplates />} />
     </Route>
-  </>
+  </Route>
 )

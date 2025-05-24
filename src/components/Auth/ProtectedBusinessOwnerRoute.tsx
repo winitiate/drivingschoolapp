@@ -3,6 +3,7 @@
 import React from 'react'
 import { Navigate, Outlet, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/useAuth'
+import { Box, CircularProgress } from '@mui/material'
 
 interface Props {
   redirectPath: string
@@ -15,43 +16,53 @@ interface Props {
  * - If exactly one business ID, auto-redirect to /business/{id}.
  * - If multiple, allow index (BusinessSelect) and child routes.
  */
-const ProtectedBusinessOwnerRoute: React.FC<Props> = ({ redirectPath }) => {
+export default function ProtectedBusinessOwnerRoute({ redirectPath }: Props) {
   const { user, loading } = useAuth()
   const { businessId } = useParams<{ businessId?: string }>()
 
-  if (loading) return null  // or a spinner
+  // Wait for auth to initialize before deciding
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+        <CircularProgress />
+      </Box>
+    )
+  }
 
+  // Not authenticated → sign in
   if (!user) {
-    // not authenticated
     return <Navigate to={redirectPath} replace />
   }
 
+  // Which business IDs does this user own or belong to?
   const bizIds = Array.from(
-    new Set([...(user.ownedBusinessIds || []), ...(user.memberBusinessIds || [])])
+    new Set([
+      ...(user.ownedBusinessIds || []),
+      ...(user.memberBusinessIds || []),
+    ])
   )
 
+  // No businesses → nowhere to go
   if (bizIds.length === 0) {
-    // no business → nowhere to go
     return <Navigate to="/" replace />
   }
 
+  // No :businessId in URL → auto-forward if exactly one, else show selector
   if (!businessId) {
-    // landing on /business without an ID
     if (bizIds.length === 1) {
-      // exactly one → go straight there
       return <Navigate to={`/business/${bizIds[0]}`} replace />
     }
-    // multiple → render index (BusinessSelect)
     return <Outlet />
   }
 
-  // if a businessId param is present but not in their allowed list, bail to selector
-  if (!bizIds.includes(businessId)) {
-    return <Navigate to="/business" replace />
+  // A businessId is present → allow only if it’s in their list
+  if (bizIds.includes(businessId)) {
+    return <Outlet />
   }
 
-  // otherwise render child routes (dashboard, etc.)
-  return <Outlet />
+  // Invalid businessId → back to selector if they have many, otherwise home
+  if (bizIds.length > 1) {
+    return <Navigate to="/business" replace />
+  }
+  return <Navigate to="/" replace />
 }
-
-export default ProtectedBusinessOwnerRoute

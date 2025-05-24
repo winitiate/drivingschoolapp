@@ -10,24 +10,20 @@ export function useDashboardLinks(): NavItem[] {
   const [singleLocName, setSingleLocName] = useState<string>('Service Location')
   const [loadingLocName, setLoadingLocName] = useState<boolean>(false)
 
-  // Whenever the user’s service-location IDs change, if exactly one, fetch its name
+  // If the user only has one service-location, fetch its name
   useEffect(() => {
     if (!user) return
-    const ids = Array.from(
-      new Set([
-        ...(user.ownedLocationIds || []),
-        ...(user.adminLocationIds || []),
-      ])
-    )
+    const ids = Array.from(new Set([
+      ...(user.ownedLocationIds || []),
+      ...(user.adminLocationIds || []),
+    ]))
     if (ids.length === 1) {
-      const id = ids[0]
       setLoadingLocName(true)
       const store = new FirestoreServiceLocationStore()
+      const id = ids[0]
       if (typeof store.get === 'function') {
         store.get(id)
-          .then(loc => {
-            if (loc?.name) setSingleLocName(loc.name)
-          })
+          .then(loc => loc?.name && setSingleLocName(loc.name))
           .finally(() => setLoadingLocName(false))
       } else {
         store.listAll()
@@ -44,21 +40,14 @@ export function useDashboardLinks(): NavItem[] {
   ])
 
   return useMemo<NavItem[]>(() => {
-    // 🔍 Debug log—check these values in your browser console
-    console.log('🏷️ useDashboardLinks data:', {
-      ownedLocationIds: user?.ownedLocationIds,
-      adminLocationIds: user?.adminLocationIds,
-      slIds: Array.from(new Set([...(user?.ownedLocationIds || []), ...(user?.adminLocationIds || [])])),
-      singleLocName,
-      loadingLocName,
-    })
-
     const out: NavItem[] = [{ label: 'Home', to: '/' }]
 
+    // 👉 Not signed in → show all available sign-in flows
     if (!user) {
       out.push(
-        { label: 'Client Sign In', to: '/sign-in' },
-        { label: 'Business Sign In', to: '/business/sign-in' }
+        { label: 'Client Sign In',            to: '/sign-in' },
+        { label: 'Service Provider Sign In',  to: '/service-provider/sign-in' },
+        { label: 'Business Sign In',          to: '/business/sign-in' },
       )
       return out
     }
@@ -71,7 +60,7 @@ export function useDashboardLinks(): NavItem[] {
       clientLocationIds = [],
     } = user
 
-    // Super-Admin
+    // Super-admin
     if (roles.includes('superAdmin')) {
       out.push({ label: 'Superadmin Dashboard', to: '/super-admin' })
     }
@@ -90,7 +79,7 @@ export function useDashboardLinks(): NavItem[] {
       })
     }
 
-    // Service-Location Admin/Owner
+    // Service-Location Admin / Owner
     const slIds = Array.from(new Set([
       ...(user.ownedLocationIds || []),
       ...(user.adminLocationIds || []),
@@ -109,7 +98,10 @@ export function useDashboardLinks(): NavItem[] {
     // Service-Provider
     if (roles.includes('serviceProvider')) {
       if (providerLocationIds.length > 1) {
-        out.push({ label: 'Service Provider Dashboard', to: '/service-provider' })
+        out.push({
+          label: 'Service Provider Dashboard',
+          to: '/service-provider',
+        })
       } else if (providerLocationIds.length === 1) {
         out.push({
           label: 'Service Provider Dashboard',
