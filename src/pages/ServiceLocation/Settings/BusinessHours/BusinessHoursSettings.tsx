@@ -6,9 +6,14 @@ import {
   Box,
   TextField,
   Button,
-  Grid,
   CircularProgress,
   Alert,
+  Paper,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
 } from '@mui/material';
 import { useParams } from 'react-router-dom';
 
@@ -18,7 +23,6 @@ import { FirestoreServiceLocationStore } from '../../../../data/FirestoreService
 
 type Hours = { open: string; close: string };
 
-// Map the model’s keys to display labels
 const DAYS: Array<{ key: keyof ServiceLocation['businessHours']; label: string }> = [
   { key: 'mon', label: 'Monday' },
   { key: 'tue', label: 'Tuesday' },
@@ -29,24 +33,18 @@ const DAYS: Array<{ key: keyof ServiceLocation['businessHours']; label: string }
   { key: 'sun', label: 'Sunday' },
 ];
 
-export default function BusinessHours() {
+export default function BusinessHoursSettings() {
   const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
-
-  // Use the abstraction layer
   const store: ServiceLocationStore = useMemo(
     () => new FirestoreServiceLocationStore(),
     []
   );
 
-  // Local slice of businessHours
-  const [businessHours, setBusinessHours] = useState<
-    Partial<Record<keyof ServiceLocation['businessHours'], Hours>>
-  >({});
+  const [businessHours, setBusinessHours] = useState<Partial<Record<keyof ServiceLocation['businessHours'], Hours>>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load existing hours
   const load = useCallback(async () => {
     if (!serviceLocationId) return;
     setLoading(true);
@@ -69,13 +67,12 @@ export default function BusinessHours() {
     load();
   }, [load]);
 
-  // Handle edits
   const handleChange = (
     dayKey: keyof ServiceLocation['businessHours'],
     field: keyof Hours,
     value: string
   ) => {
-    setBusinessHours((prev) => ({
+    setBusinessHours(prev => ({
       ...prev,
       [dayKey]: {
         ...(prev[dayKey] ?? { open: '', close: '' }),
@@ -84,7 +81,6 @@ export default function BusinessHours() {
     }));
   };
 
-  // Persist back
   const handleSave = async () => {
     if (!serviceLocationId) return;
     setSaving(true);
@@ -93,9 +89,7 @@ export default function BusinessHours() {
       const loc = (await store.getById(serviceLocationId)) as ServiceLocation;
       await store.save({
         ...loc,
-        businessHours: {
-          ...(businessHours as ServiceLocation['businessHours']),
-        },
+        businessHours: businessHours as ServiceLocation['businessHours'],
       });
     } catch (e: any) {
       setError(e.message || 'Failed to save business hours');
@@ -113,7 +107,7 @@ export default function BusinessHours() {
   }
 
   return (
-    <Box>
+    <Box p={4}>
       <Typography variant="h5" gutterBottom>
         Business Hours
       </Typography>
@@ -124,37 +118,52 @@ export default function BusinessHours() {
         </Alert>
       )}
 
-      <Grid container spacing={2}>
-        {DAYS.map(({ key, label }) => (
-          <React.Fragment key={key}>
-            <Grid item xs={12} sm={4}>
-              <Typography>{label}</Typography>
-            </Grid>
-            <Grid item xs={6} sm={4}>
-              <TextField
-                label="Open"
-                type="time"
-                fullWidth
-                InputLabelProps={{ shrink: true }}
-                value={businessHours[key]?.open || ''}
-                onChange={(e) => handleChange(key, 'open', e.target.value)}
-              />
-            </Grid>
-            <Grid item xs={6} sm={4}>
-              <TextField
-                label="Close"
-                type="time"
-                fullWidth
-                InputLabelProps={{ shrink: true }}
-                value={businessHours[key]?.close || ''}
-                onChange={(e) => handleChange(key, 'close', e.target.value)}
-              />
-            </Grid>
-          </React.Fragment>
-        ))}
-      </Grid>
+      <Paper variant="outlined">
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Day</TableCell>
+              <TableCell>Open</TableCell>
+              <TableCell>Close</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {DAYS.map(({ key, label }, idx) => (
+              <TableRow
+                key={key}
+                sx={{
+                  '&:nth-of-type(odd)': { backgroundColor: 'action.hover' },
+                }}
+              >
+                <TableCell>{label}</TableCell>
+                <TableCell>
+                  <TextField
+                    type="time"
+                    fullWidth
+                    InputLabelProps={{ shrink: true }}
+                    value={businessHours[key]?.open || ''}
+                    onChange={e => handleChange(key, 'open', e.target.value)}
+                  />
+                </TableCell>
+                <TableCell>
+                  <TextField
+                    type="time"
+                    fullWidth
+                    InputLabelProps={{ shrink: true }}
+                    value={businessHours[key]?.close || ''}
+                    onChange={e => handleChange(key, 'close', e.target.value)}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Paper>
 
-      <Box mt={3}>
+      <Box mt={3} display="flex" justifyContent="flex-end" gap={2}>
+        <Button onClick={load} disabled={loading || saving}>
+          Cancel
+        </Button>
         <Button
           variant="contained"
           onClick={handleSave}

@@ -1,15 +1,4 @@
-// src/components/AppointmentTypes/AppointmentTypesTable.tsx
-
-/**
- * AppointmentTypesTable.tsx
- *
- * Presentational table component for listing appointment types.
- * Receives an array of AppointmentType objects and callbacks to invoke when
- * the user clicks “Edit” or reorders the list. Doesn’t perform any data fetching—
- * use the appointmentTypeStore abstraction in the parent to load/save/reorder data.
- */
-
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   Table,
   TableHead,
@@ -22,52 +11,45 @@ import {
   Typography,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
-import { AppointmentType } from '../../models/AppointmentType';
+import { AssessmentType } from '../../models/AssessmentType';
+import { GradingScale } from '../../models/GradingScale';
 
-export interface AppointmentTypesTableProps {
-  /** Array of appointment types to display */
-  appointmentTypes: AppointmentType[];
-  /** Callback when the Edit button is clicked */
-  onEdit: (appointmentType: AppointmentType) => void;
-  /**
-   * Callback when the user reorders items.
-   * Receives the updated array with new `order` fields.
-   */
-  onOrderChange: (updatedList: AppointmentType[]) => void;
+export interface AssessmentTypesTableProps {
+  assessmentTypes: AssessmentType[];
+  gradingScales: GradingScale[];
+  onEdit: (assessmentType: AssessmentType) => void;
+  onOrderChange: (updatedList: AssessmentType[]) => void;
 }
 
-export default function AppointmentTypesTable({
-  appointmentTypes,
+export default function AssessmentTypesTable({
+  assessmentTypes = [],
+  gradingScales = [],
   onEdit,
   onOrderChange,
-}: AppointmentTypesTableProps) {
-  const [items, setItems] = useState<AppointmentType[]>([]);
-
-  useEffect(() => {
-    // initialize `order` based on array position
-    const ordered = appointmentTypes.map((item, idx) => ({
-      ...item,
-      order: idx + 1,
-    }));
-    setItems(ordered);
-  }, [appointmentTypes]);
+}: AssessmentTypesTableProps) {
+  // Always work with a sorted copy by the true `number` field
+  const sorted = [...assessmentTypes].sort(
+    (a, b) => (a.number ?? 0) - (b.number ?? 0)
+  );
 
   const moveItem = (from: number, to: number) => {
-    const updated = [...items];
+    const updated = [...sorted];
     const [moved] = updated.splice(from, 1);
     updated.splice(to, 0, moved);
-    const withNewOrder = updated.map((it, idx) => ({
+
+    // Overwrite each item's `number = idx+1`
+    const withNewNumber = updated.map((it, idx) => ({
       ...it,
-      order: idx + 1,
+      number: idx + 1,
     }));
-    setItems(withNewOrder);
-    onOrderChange(withNewOrder);
+
+    onOrderChange(withNewNumber);
   };
 
-  if (items.length === 0) {
+  if (sorted.length === 0) {
     return (
       <Box textAlign="center" mt={4}>
-        <Typography>No appointment types defined.</Typography>
+        <Typography>No assessment types defined.</Typography>
       </Box>
     );
   }
@@ -79,38 +61,37 @@ export default function AppointmentTypesTable({
           <TableCell>Order</TableCell>
           <TableCell>Title</TableCell>
           <TableCell>Description</TableCell>
-          <TableCell>Duration (min)</TableCell>
-          <TableCell>Price</TableCell>
+          <TableCell>Grading Scale</TableCell>
           <TableCell align="center">Actions</TableCell>
         </TableRow>
       </TableHead>
       <TableBody>
-        {items.map((at, idx) => (
-          <TableRow key={at.id}>
-            <TableCell>{at.order}</TableCell>
-            <TableCell>{at.title}</TableCell>
-            <TableCell>{at.description || '-'}</TableCell>
-            <TableCell>{at.durationMinutes ?? '-'}</TableCell>
-            <TableCell>
-              {at.price != null ? `$${at.price.toFixed(2)}` : '-'}
-            </TableCell>
-            <TableCell align="center">
-              <IconButton onClick={() => onEdit(at)} size="small">
-                <EditIcon fontSize="small" />
-              </IconButton>
-              {idx > 0 && (
-                <Button size="small" onClick={() => moveItem(idx, idx - 1)}>
-                  ↑
-                </Button>
-              )}
-              {idx < items.length - 1 && (
-                <Button size="small" onClick={() => moveItem(idx, idx + 1)}>
-                  ↓
-                </Button>
-              )}
-            </TableCell>
-          </TableRow>
-        ))}
+        {sorted.map((at, idx) => {
+          const scale = gradingScales.find(s => s.id === at.gradingScaleId);
+          return (
+            <TableRow key={at.id}>
+              <TableCell>{at.number ?? '-'}</TableCell>
+              <TableCell>{at.title}</TableCell>
+              <TableCell>{at.description || '-'}</TableCell>
+              <TableCell>{scale?.title ?? '-'}</TableCell>
+              <TableCell align="center">
+                <IconButton onClick={() => onEdit(at)} size="small">
+                  <EditIcon fontSize="small" />
+                </IconButton>
+                {idx > 0 && (
+                  <Button size="small" onClick={() => moveItem(idx, idx - 1)}>
+                    ↑
+                  </Button>
+                )}
+                {idx < sorted.length - 1 && (
+                  <Button size="small" onClick={() => moveItem(idx, idx + 1)}>
+                    ↓
+                  </Button>
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );

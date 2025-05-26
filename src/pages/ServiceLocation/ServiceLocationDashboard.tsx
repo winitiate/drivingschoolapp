@@ -1,7 +1,7 @@
 // src/pages/ServiceLocation/ServiceLocationDashboard.tsx
 
-import React, { useState, useEffect } from 'react'
-import { useParams, Link as RouterLink } from 'react-router-dom'
+import React, { useState, useEffect } from 'react';
+import { useParams, Link as RouterLink } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -9,31 +9,24 @@ import {
   Grid,
   Card,
   CardContent,
-} from '@mui/material'
-import { FirestoreServiceLocationStore } from '../../data/FirestoreServiceLocationStore'
-import type { ServiceLocation } from '../../models/ServiceLocation'
+} from '@mui/material';
+import { FirestoreServiceLocationStore } from '../../data/FirestoreServiceLocationStore';
+import type { ServiceLocation } from '../../models/ServiceLocation';
 
 export default function ServiceLocationDashboard() {
-  // grab the exact param name from your route
-  const { serviceLocationId } = useParams<{ serviceLocationId: string }>()
+  // Only grab serviceLocationId
+  const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
 
-  const [locationName, setLocationName] = useState<string>('Service Location')
-  const store = React.useMemo(() => new FirestoreServiceLocationStore(), [])
+  const [locationName, setLocationName] = useState<string>('Service Location');
+  const store = React.useMemo(() => new FirestoreServiceLocationStore(), []);
 
   // fetch the name once we know the ID
   useEffect(() => {
-    if (!serviceLocationId) return
-    if (typeof store.get === 'function') {
-      store.get(serviceLocationId).then(loc => {
-        if (loc?.name) setLocationName(loc.name)
-      })
-    } else {
-      store.listAll().then(all => {
-        const loc = all.find(l => l.id === serviceLocationId)
-        if (loc?.name) setLocationName(loc.name)
-      })
-    }
-  }, [serviceLocationId, store])
+    if (!serviceLocationId) return;
+    store.getById(serviceLocationId).then(loc => {
+      if (loc?.name) setLocationName(loc.name);
+    });
+  }, [serviceLocationId, store]);
 
   // guard: if no ID, nothing to show
   if (!serviceLocationId) {
@@ -41,22 +34,23 @@ export default function ServiceLocationDashboard() {
       <Box sx={{ p: 3 }}>
         <Typography color="error">Invalid service-location ID</Typography>
       </Box>
-    )
+    );
   }
 
   const sections: Array<[string, string]> = [
-    ['Clients',           `/service-location/${serviceLocationId}/clients`],
-    ['Providers',         `/service-location/${serviceLocationId}/providers`],
-    ['Appointments',      `/service-location/${serviceLocationId}/appointments`],
-    ['Appointment Types', `/service-location/${serviceLocationId}/settings/appointment-types`],
-    ['Assessment Types',  `/service-location/${serviceLocationId}/settings/assessment-types`],
-    ['Grading Scales',    `/service-location/${serviceLocationId}/settings/grading-scales`],
-    ['Packages',          `/service-location/${serviceLocationId}/settings/package-settings`],
-    ['Business Hours',    `/service-location/${serviceLocationId}/settings/business-hours`],
-    ['FAQ',               `/service-location/${serviceLocationId}/settings/faq-settings`],
-    ['SquareUp',          `/service-location/${serviceLocationId}/settings/square-up-settings`],
-    ['Admin Settings',    `/service-location/${serviceLocationId}/settings/admin-settings`],
-  ]
+    ['Clients',              `/service-location/${serviceLocationId}/clients`],
+    ['Providers',            `/service-location/${serviceLocationId}/providers`],
+    ['Appointments',         `/service-location/${serviceLocationId}/appointments`],
+    ['Location Settings',    `/service-location/${serviceLocationId}/settings`],
+    ['Appointment Types',    `/service-location/${serviceLocationId}/settings/appointment-types`],
+    ['Assessment Types',     `/service-location/${serviceLocationId}/settings/assessment-types`],
+    ['Grading Scales',       `/service-location/${serviceLocationId}/settings/grading-scales`],
+    ['Packages',             `/service-location/${serviceLocationId}/settings/package-settings`],
+    ['Business Hours',       `/service-location/${serviceLocationId}/settings/business-hours`],
+    ['FAQ',                  `/service-location/${serviceLocationId}/settings/faq-settings`],
+    ['SquareUp',             `/service-location/${serviceLocationId}/settings/square-up-settings`],
+    ['Admin Settings',       `/service-location/${serviceLocationId}/settings/admin-settings`],
+  ];
 
   return (
     <Box sx={{ p: 3 }}>
@@ -85,5 +79,5 @@ export default function ServiceLocationDashboard() {
         ))}
       </Grid>
     </Box>
-  )
+  );
 }

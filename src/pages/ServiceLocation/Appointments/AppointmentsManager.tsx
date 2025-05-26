@@ -1,18 +1,11 @@
 // src/pages/ServiceLocation/Appointments/AppointmentsManager.tsx
 
-/**
- * AppointmentsManager.tsx
- *
- * Admin interface for managing appointments at a specific service location.
- * - Uses the AppointmentStore abstraction to load all appointments,
- *   then filters by serviceLocationId.
- * - Uses ClientStore, ServiceProviderStore, AppointmentTypeStore
- *   abstractions to load related entities, scoped by serviceLocationId.
- * - Enriches appointments with clientName and serviceProviderName.
- * - Renders AppointmentsTable and AppointmentFormDialog.
- */
-
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Box,
@@ -21,46 +14,36 @@ import {
   CircularProgress,
   Alert,
 } from '@mui/material';
+import { getFirestore, doc, getDoc, deleteDoc } from 'firebase/firestore';
 
-import AppointmentFormDialog from '../../../components/Appointments/AppointmentFormDialog';
-import AppointmentsTable from '../../../components/Appointments/AppointmentsTable';
-
-import { FirestoreAppointmentStore } from '../../../data/FirestoreAppointmentStore';
-import { FirestoreClientStore } from '../../../data/FirestoreClientStore';
+import AdminAppointmentDialog from '../../../components/Appointments/Admin/AdminAppointmentDialog';
+import AppointmentsTable          from '../../../components/Appointments/AppointmentsTable';
+import { FirestoreAppointmentStore }     from '../../../data/FirestoreAppointmentStore';
+import { FirestoreClientStore }          from '../../../data/FirestoreClientStore';
 import { FirestoreServiceProviderStore } from '../../../data/FirestoreServiceProviderStore';
 import { FirestoreAppointmentTypeStore } from '../../../data/FirestoreAppointmentTypeStore';
 
 import type { Appointment } from '../../../models/Appointment';
-import { getFirestore, doc, getDoc } from 'firebase/firestore';
 
 export default function AppointmentsManager() {
   const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
   const db = useMemo(() => getFirestore(), []);
 
-  // Use the abstraction stores
-  const appointmentStore = useMemo(() => new FirestoreAppointmentStore(), []);
-  const clientStore = useMemo(() => new FirestoreClientStore(), []);
-  const serviceProviderStore = useMemo(
-    () => new FirestoreServiceProviderStore(),
-    []
-  );
-  const appointmentTypeStore = useMemo(
-    () => new FirestoreAppointmentTypeStore(),
-    []
-  );
+  const apptStore     = useMemo(() => new FirestoreAppointmentStore(), []);
+  const clientStore   = useMemo(() => new FirestoreClientStore(), []);
+  const providerStore = useMemo(() => new FirestoreServiceProviderStore(), []);
+  const typeStore     = useMemo(() => new FirestoreAppointmentTypeStore(), []);
 
-  // Local state
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
-  const [serviceProviders, setServiceProviders] = useState<
-    { id: string; name: string }[]
-  >([]);
-  const [types, setTypes] = useState<{ id: string; title: string }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Appointment | null>(null);
+  const [appointments,   setAppointments]   = useState<Appointment[]>([]);
+  const [clientsRaw,     setClientsRaw]     = useState<{ id: string; userId: string }[]>([]);
+  const [providersRaw,   setProvidersRaw]   = useState<{ id: string; userId: string }[]>([]);
+  const [typesRaw,       setTypesRaw]       = useState<{ id: string; title: string }[]>([]);
+  const [clientMap,      setClientMap]      = useState<Record<string,string>>({});
+  const [providerMap,    setProviderMap]    = useState<Record<string,string>>({});
+  const [loading,        setLoading]        = useState(true);
+  const [error,          setError]          = useState<string | null>(null);
+  const [dialogOpen,     setDialogOpen]     = useState(false);
+  const [editing,        setEditing]        = useState<Appointment | null>(null);
 
   const reload = useCallback(async () => {
     if (!serviceLocationId) return;
@@ -68,85 +51,67 @@ export default function AppointmentsManager() {
     setError(null);
 
     try {
-      // 1. Load all appointments, then filter by serviceLocationId
-      const all = await appointmentStore.listAll();
-      const apptsForLocation = all.filter((a) =>
+      // 1) load & filter appointments for this location
+      const all = await apptStore.listAll();
+      const forLoc = all.filter(a =>
         a.serviceLocationIds?.includes(serviceLocationId)
       );
 
-      // 2. Load clients, providers, types scoped to this location
-      const [clientList, providerList, typeList] = await Promise.all([
+      // 2) load raw client/provider/type entities
+      const [cl, pr, tp] = await Promise.all([
         clientStore.listByServiceLocation(serviceLocationId),
-        serviceProviderStore.listByServiceLocation(serviceLocationId),
-        appointmentTypeStore.listByServiceLocation(serviceLocationId),
+        providerStore.listByServiceLocation(serviceLocationId),
+        typeStore.listByServiceLocation(serviceLocationId),
       ]);
 
-      // 3. Resolve client names
-      const clientsWithNames = await Promise.all(
-        clientList.map(async (c) => {
-          const snap = await getDoc(doc(db, 'users', c.id));
-          const data = snap.exists() ? snap.data() : {};
-          return {
-            id: c.id,
-            name:
-              `${data.firstName || ''} ${data.lastName || ''}`.trim() ||
-              'Unnamed Client',
-          };
+      // 3) build clientMap
+      const cMap: Record<string,string> = {};
+      await Promise.all(
+        cl.map(async c => {
+          const snap = await getDoc(doc(db, 'users', c.userId));
+          const d = snap.exists() ? snap.data() : {};
+          cMap[c.id] =
+            [d?.firstName, d?.lastName].filter(Boolean).join(' ') ||
+            'Unknown Client';
         })
       );
 
-      // 4. Resolve provider names
-      const providersWithNames = await Promise.all(
-        providerList.map(async (p) => {
-          const snap = await getDoc(doc(db, 'users', p.id));
-          const data = snap.exists() ? snap.data() : {};
-          return {
-            id: p.id,
-            name:
-              `${data.firstName || ''} ${data.lastName || ''}`.trim() ||
-              'Unnamed Provider',
-          };
+      // 4) build providerMap
+      const pMap: Record<string,string> = {};
+      await Promise.all(
+        pr.map(async p => {
+          const snap = await getDoc(doc(db, 'users', p.userId));
+          const d = snap.exists() ? snap.data() : {};
+          pMap[p.id] =
+            [d?.firstName, d?.lastName].filter(Boolean).join(' ') ||
+            'Unknown Provider';
         })
       );
 
-      // 5. Prepare appointment types
-      const typesList = typeList.map((t) => ({
-        id: t.id,
-        title: t.title,
-      }));
-
-      // 6. Build lookup maps
-      const clientMap = Object.fromEntries(
-        clientsWithNames.map((c) => [c.id, c.name])
-      );
-      const providerMap = Object.fromEntries(
-        providersWithNames.map((p) => [p.id, p.name])
-      );
-
-      // 7. Enrich appointments
-      const enriched = apptsForLocation.map((a) => ({
+      // 5) enrich and set appointments
+      const enriched = forLoc.map(a => ({
         ...a,
-        clientName: clientMap[a.clientId] || 'Unknown Client',
-        serviceProviderName:
-          providerMap[a.serviceProviderId] || 'Unknown Provider',
+        clientName:          cMap[a.clientId]         || 'Unknown Client',
+        serviceProviderName: pMap[a.serviceProviderId] || 'Unknown Provider',
       }));
 
-      // 8. Update state
       setAppointments(enriched);
-      setClients(clientsWithNames);
-      setServiceProviders(providersWithNames);
-      setTypes(typesList);
+      setClientsRaw(cl);
+      setProvidersRaw(pr);
+      setTypesRaw(tp);
+      setClientMap(cMap);
+      setProviderMap(pMap);
     } catch (e: any) {
       setError(e.message || 'Failed to load data');
     } finally {
       setLoading(false);
     }
   }, [
-    appointmentStore,
-    clientStore,
-    serviceProviderStore,
-    appointmentTypeStore,
     serviceLocationId,
+    apptStore,
+    clientStore,
+    providerStore,
+    typeStore,
     db,
   ]);
 
@@ -154,23 +119,32 @@ export default function AppointmentsManager() {
     reload();
   }, [reload]);
 
-  const handleSave = async (data: Partial<Appointment>) => {
-    if (!serviceLocationId) return;
-    try {
-      const base = editing || ({ serviceLocationIds: [] } as Appointment);
-      const merged: Appointment = {
-        ...(base.id ? base : (data as Appointment)),
-        ...data,
-        serviceLocationIds: Array.from(
-          new Set([...(base.serviceLocationIds || []), serviceLocationId])
-        ),
-      };
-      await appointmentStore.save(merged);
-      setDialogOpen(false);
-      await reload();
-    } catch (e: any) {
-      setError(e.message);
-    }
+  // 6) map raw → {id,label} for dropdowns
+  const clientOpts = clientsRaw.map(c => ({
+    id:    c.id,
+    label: clientMap[c.id] || 'Unknown Client',
+  }));
+  const providerOpts = providersRaw.map(p => ({
+    id:    p.id,
+    label: providerMap[p.id] || 'Unknown Provider',
+  }));
+  const typeOpts = typesRaw.map(t => ({
+    id:    t.id,
+    label: t.title,
+  }));
+
+  const handleSave = async (a: Appointment) => {
+    await apptStore.save(a);
+    setDialogOpen(false);
+    setEditing(null);
+    await reload();
+  };
+
+  const handleDelete = async (a: Appointment) => {
+    await deleteDoc(doc(db, 'appointments', a.id));
+    setDialogOpen(false);
+    setEditing(null);
+    await reload();
   };
 
   return (
@@ -188,14 +162,10 @@ export default function AppointmentsManager() {
         </Button>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
       {loading ? (
-        <Box textAlign="center">
+        <Box textAlign="center" mt={4}>
           <CircularProgress />
         </Box>
       ) : appointments.length === 0 ? (
@@ -205,22 +175,23 @@ export default function AppointmentsManager() {
           appointments={appointments}
           loading={false}
           error={null}
-          onEdit={(appt) => {
-            setEditing(appt);
+          onEdit={a => {
+            setEditing(a);
             setDialogOpen(true);
           }}
         />
       )}
 
-      <AppointmentFormDialog
+      <AdminAppointmentDialog
         open={dialogOpen}
         serviceLocationId={serviceLocationId!}
         initialData={editing || undefined}
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
-        clients={clients}
-        serviceProviders={serviceProviders}
-        appointmentTypes={types}
+        onDelete={handleDelete}
+        clients={clientOpts}
+        providers={providerOpts}
+        types={typeOpts}
       />
     </Box>
   );

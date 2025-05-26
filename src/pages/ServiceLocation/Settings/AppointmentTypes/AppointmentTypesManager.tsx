@@ -1,112 +1,116 @@
-/**
- * AssessmentTypesManager.tsx
- *
- * Admin interface for managing assessment‐type definitions at a specific
- * service location. Uses the AssessmentTypeStore abstraction to load and save,
- * and GradingScaleStore to load available grading scales.
- */
+// src/pages/ServiceLocation/Settings/AppointmentTypes/AppointmentTypesManager.tsx
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, Typography, Button, CircularProgress, Alert } from '@mui/material';
 
-import AssessmentTypeFormDialog from '../../../../components/AssessmentTypes/AssessmentTypeFormDialog';
-import AssessmentTypeTable from '../../../../components/AssessmentTypes/AssessmentTypesTable';
+import AppointmentTypeFormDialog   from '../../../../components/AppointmentTypes/AppointmentTypeFormDialog';
+import AppointmentTypesTable       from '../../../../components/AppointmentTypes/AppointmentTypesTable';
 
-import { AssessmentType } from '../../../../models/AssessmentType';
-import { AssessmentTypeStore } from '../../../../data/AssessmentTypeStore';
+import { AppointmentType }         from '../../../../models/AppointmentType';
+import { AppointmentTypeStore }    from '../../../../data/AppointmentTypeStore';
+import { FirestoreAppointmentTypeStore } from '../../../../data/FirestoreAppointmentTypeStore';
+
+import { AssessmentType }          from '../../../../models/AssessmentType';
+import { AssessmentTypeStore }     from '../../../../data/AssessmentTypeStore';
 import { FirestoreAssessmentTypeStore } from '../../../../data/FirestoreAssessmentTypeStore';
-import { GradingScaleStore } from '../../../../data/GradingScaleStore';
-import { FirestoreGradingScaleStore } from '../../../../data/FirestoreGradingScaleStore';
 
-export default function AssessmentTypesManager() {
+export default function AppointmentTypesManager() {
   const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
 
-  // Abstraction stores
-  const store: AssessmentTypeStore = useMemo(
-    () => new FirestoreAssessmentTypeStore(),
+  // Stores
+  const apptStore: AppointmentTypeStore = useMemo(
+    () => new FirestoreAppointmentTypeStore(),
     []
   );
-  const gradingScaleStore: GradingScaleStore = useMemo(
-    () => new FirestoreGradingScaleStore(),
+  const assessStore: AssessmentTypeStore = useMemo(
+    () => new FirestoreAssessmentTypeStore(),
     []
   );
 
   // Local state
-  const [assessmentTypes, setAssessmentTypes] = useState<AssessmentType[]>([]);
-  const [gradingScales, setGradingScales] = useState<{ id: string; title: string }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [appointmentTypes, setAppointmentTypes] = useState<AppointmentType[]>([]);
+  const [assessmentOptions, setAssessmentOptions] = useState<AssessmentType[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<AssessmentType | null>(null);
+  const [editing, setEditing]   = useState<AppointmentType | null>(null);
 
-  // Reload data scoped to this service location
+  // Load both appt‐ and assessment‐types
   const reload = useCallback(async () => {
     if (!serviceLocationId) return;
     setLoading(true);
     setError(null);
-    try {
-      // Load assessment‐type definitions for this location
-      const list = await store.listByServiceLocation(serviceLocationId);
-      setAssessmentTypes(list);
 
-      // Load all grading scales for the dropdown
-      const scales = await gradingScaleStore.listAll();
-      setGradingScales(scales.map(gs => ({ id: gs.id, title: gs.title })));
+    try {
+      // 1) appointment types
+      const appts = await apptStore.listByServiceLocation(serviceLocationId);
+      appts.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      setAppointmentTypes(appts);
+
+      // 2) assessment types
+      const assesses = await assessStore.listByServiceLocation(serviceLocationId);
+      setAssessmentOptions(assesses);
     } catch (e: any) {
-      setError(e.message || 'Failed to load assessment types or grading scales');
+      setError(e.message || 'Failed to load types');
     } finally {
       setLoading(false);
     }
-  }, [serviceLocationId, store, gradingScaleStore]);
+  }, [serviceLocationId, apptStore, assessStore]);
 
   useEffect(() => {
     reload();
   }, [reload]);
 
-  // Save or update an assessment type
+  // Save (from dialog), including any manual order & linked assessments
   const handleSave = useCallback(
-    async (assessmentType: AssessmentType) => {
+    async (appt: AppointmentType) => {
       setError(null);
       try {
-        await store.save(assessmentType);
+        // Normalize undefined → null to satisfy Firestore
+        const payload: AppointmentType = {
+          ...appt,
+          durationMinutes:  appt.durationMinutes ?? null,
+          price:            appt.price ?? null,
+          order:            appt.order ?? null,
+          assessmentTypeIds: appt.assessmentTypeIds ?? [],
+        };
+        await apptStore.save(payload);
+
         setDialogOpen(false);
         setEditing(null);
         await reload();
       } catch (e: any) {
-        setError(e.message || 'Failed to save assessment type');
+        setError(e.message || 'Failed to save appointment type');
       }
     },
-    [store, reload]
+    [apptStore, reload]
   );
 
-  // Reorder assessment types
+  // Persist arrow‐driven reorder
   const handleOrderChange = useCallback(
-    async (updatedOrder: AssessmentType[]) => {
+    async (updatedList: AppointmentType[]) => {
       setError(null);
       try {
-        // Optimistically update UI
-        setAssessmentTypes(updatedOrder);
+        const toSave = updatedList.map((it, idx) => ({
+          ...it,
+          order: idx + 1,
+        }));
+        await Promise.all(toSave.map(item => apptStore.save(item)));
 
-        // Persist new order values
-        for (let i = 0; i < updatedOrder.length; i++) {
-          const updated = { ...updatedOrder[i], number: i + 1 };
-          await store.save(updated);
-        }
-
-        // Reload to ensure consistency
+        setAppointmentTypes(toSave);
         await reload();
       } catch (e: any) {
         setError(e.message || 'Failed to update order');
       }
     },
-    [store, reload]
+    [apptStore, reload]
   );
 
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h5">Assessment Types</Typography>
+      <Box display="flex" justifyContent="space-between" mb={2}>
+        <Typography variant="h5">Appointment Types</Typography>
         <Button
           variant="contained"
           onClick={() => {
@@ -114,38 +118,34 @@ export default function AssessmentTypesManager() {
             setDialogOpen(true);
           }}
         >
-          Add Assessment Type
+          Add Appointment Type
         </Button>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
       {loading ? (
-        <Box textAlign="center">
-          <CircularProgress />
-        </Box>
+        <Box textAlign="center"><CircularProgress /></Box>
       ) : (
-        <AssessmentTypeTable
-          assessmentTypes={assessmentTypes}
-          onEdit={(at) => {
-            setEditing(at);
+        <AppointmentTypesTable
+          appointmentTypes={appointmentTypes}
+          onEdit={at => {
+            // Pull the latest version so order & linked IDs are fresh
+            const fresh = appointmentTypes.find(x => x.id === at.id) || at;
+            setEditing(fresh);
             setDialogOpen(true);
           }}
           onOrderChange={handleOrderChange}
         />
       )}
 
-      <AssessmentTypeFormDialog
+      <AppointmentTypeFormDialog
         open={dialogOpen}
         serviceLocationId={serviceLocationId!}
         initialData={editing}
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
-        gradingScales={gradingScales}
+        assessmentTypes={assessmentOptions}
       />
     </Box>
   );

@@ -1,11 +1,7 @@
-// src/pages/ServiceLocation/Settings/AssessmentTypes/AssessmentTypesManager.tsx
-
 /**
  * AssessmentTypesManager.tsx
  *
  * Admin interface for managing assessment types at a specific service location.
- * Uses the AssessmentTypeStore abstraction to load and save assessment types,
- * scoped by serviceLocationId, and GradingScaleStore to load available grading scales.
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -13,7 +9,7 @@ import { useParams } from 'react-router-dom';
 import { Box, Typography, Button, CircularProgress, Alert } from '@mui/material';
 
 import AssessmentTypeFormDialog from '../../../../components/AssessmentTypes/AssessmentTypeFormDialog';
-import AssessmentTypeTable from '../../../../components/AssessmentTypes/AssessmentTypesTable';
+import AssessmentTypesTable from '../../../../components/AssessmentTypes/AssessmentTypesTable';
 
 import { AssessmentType } from '../../../../models/AssessmentType';
 import { AssessmentTypeStore } from '../../../../data/AssessmentTypeStore';
@@ -24,7 +20,6 @@ import { FirestoreGradingScaleStore } from '../../../../data/FirestoreGradingSca
 export default function AssessmentTypesManager() {
   const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
 
-  // Abstraction stores
   const store: AssessmentTypeStore = useMemo(
     () => new FirestoreAssessmentTypeStore(),
     []
@@ -34,7 +29,6 @@ export default function AssessmentTypesManager() {
     []
   );
 
-  // Local state
   const [assessmentTypes, setAssessmentTypes] = useState<AssessmentType[]>([]);
   const [gradingScales, setGradingScales] = useState<{ id: string; title: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,17 +36,17 @@ export default function AssessmentTypesManager() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AssessmentType | null>(null);
 
-  // Reload data scoped to this service location
   const reload = useCallback(async () => {
     if (!serviceLocationId) return;
     setLoading(true);
     setError(null);
+
     try {
-      // Load assessment types for this location
       const list = await store.listByServiceLocation(serviceLocationId);
+      // Sort by the true `number` field
+      list.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
       setAssessmentTypes(list);
 
-      // Load all grading scales for the dropdown
       const scales = await gradingScaleStore.listAll();
       setGradingScales(scales.map(gs => ({ id: gs.id, title: gs.title })));
     } catch (e: any) {
@@ -66,7 +60,6 @@ export default function AssessmentTypesManager() {
     reload();
   }, [reload]);
 
-  // Save or update an assessment type
   const handleSave = useCallback(
     async (assessmentType: AssessmentType) => {
       setError(null);
@@ -82,21 +75,15 @@ export default function AssessmentTypesManager() {
     [store, reload]
   );
 
-  // Reorder assessment types (if supported)
   const handleOrderChange = useCallback(
-    async (updatedOrder: AssessmentType[]) => {
+    async (updatedList: AssessmentType[]) => {
       setError(null);
       try {
-        // Optimistically update UI
-        setAssessmentTypes(updatedOrder);
+        // Persist the new `number` on each record in parallel
+        await Promise.all(updatedList.map(item => store.save(item)));
 
-        // Persist new order values
-        for (let i = 0; i < updatedOrder.length; i++) {
-          const updated = { ...updatedOrder[i], number: i + 1 };
-          await store.save(updated);
-        }
-
-        // Reload to ensure consistency
+        // Update UI and reload for consistency
+        setAssessmentTypes(updatedList);
         await reload();
       } catch (e: any) {
         setError(e.message || 'Failed to update order');
@@ -131,10 +118,13 @@ export default function AssessmentTypesManager() {
           <CircularProgress />
         </Box>
       ) : (
-        <AssessmentTypeTable
+        <AssessmentTypesTable
           assessmentTypes={assessmentTypes}
+          gradingScales={gradingScales}
           onEdit={(at) => {
-            setEditing(at);
+            // always grab the fresh state so `number` is up-to-date
+            const fresh = assessmentTypes.find(x => x.id === at.id) || at;
+            setEditing(fresh);
             setDialogOpen(true);
           }}
           onOrderChange={handleOrderChange}
@@ -144,7 +134,7 @@ export default function AssessmentTypesManager() {
       <AssessmentTypeFormDialog
         open={dialogOpen}
         serviceLocationId={serviceLocationId!}
-        initialData={editing || null}
+        initialData={editing}
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
         gradingScales={gradingScales}

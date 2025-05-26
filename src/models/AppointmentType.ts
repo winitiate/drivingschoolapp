@@ -13,4 +13,7 @@ export interface AppointmentType extends BaseEntity {
 
   order?: number;
   customFields?: Record<string, any>;
+
+  /** Linked assessment‐type IDs */
+  assessmentTypeIds?: string[];
 }

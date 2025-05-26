@@ -1,40 +1,67 @@
 // src/hooks/useClientAppointments.ts
 
-/**
- * useClientAppointments.ts
- *
- * Custom React hook to fetch appointments for a specific client.
- * Wraps appointmentStore.listByClient to load upcoming appointments,
- * and provides loading and error states.
- */
-
 import { useState, useEffect } from 'react';
+import { FirestoreClientStore } from '../data/FirestoreClientStore';
 import { appointmentStore } from '../data';
 import type { Appointment } from '../models/Appointment';
 
-export function useClientAppointments(clientUid: string) {
+/**
+ * Fetches appointments for the logged‐in client (by UID) 
+ * at a specific location, returning loading/error states.
+ * Passing in `refreshFlag` forces a reload whenever it changes.
+ */
+export function useClientAppointments(
+  clientUid: string,
+  serviceLocationId: string,
+  refreshFlag: number
+) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null);
 
   useEffect(() => {
-    if (!clientUid) return;
+    if (!clientUid || !serviceLocationId) {
+      setAppointments([]);
+      setLoading(false);
+      return;
+    }
 
-    setLoading(true);
-    setError(null);
+    let cancelled = false;
 
     (async () => {
+      setLoading(true);
+      setError(null);
+
       try {
-        const appts = await appointmentStore.listByClient(clientUid);
-        setAppointments(appts);
+        // 1) Find the Client doc for this user UID
+        const clientStore = new FirestoreClientStore();
+        const allClients = await clientStore.listByServiceLocation(serviceLocationId);
+        const client = allClients.find(c => c.userId === clientUid);
+        if (!client) {
+          if (!cancelled) setAppointments([]);
+          return;
+        }
+
+        // 2) Load all appointments and filter
+        const all = await appointmentStore.listAll();
+        const mine = all.filter(a =>
+          a.clientId === client.id &&
+          Array.isArray(a.serviceLocationIds) &&
+          a.serviceLocationIds.includes(serviceLocationId)
+        );
+
+        if (!cancelled) setAppointments(mine);
       } catch (err: any) {
-        console.error('Failed to load appointments:', err);
-        setError(err);
+        if (!cancelled) setError(err.message || 'Failed to load appointments');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, [clientUid]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clientUid, serviceLocationId, refreshFlag]);
 
   return { appointments, loading, error };
 }

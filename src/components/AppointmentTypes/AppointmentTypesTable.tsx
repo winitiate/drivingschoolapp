@@ -25,16 +25,16 @@ import { AppointmentType } from '../../models/AppointmentType';
 
 export interface AppointmentTypesTableProps {
   /** Array of appointment types to display */
-  appointmentTypes: AppointmentType[];
+  appointmentTypes?: AppointmentType[];
   /** Callback when the Edit button is clicked */
   onEdit: (appointmentType: AppointmentType) => void;
 }
 
 export default function AppointmentTypesTable({
-  appointmentTypes,
+  appointmentTypes = [],
   onEdit,
 }: AppointmentTypesTableProps) {
-  if (!appointmentTypes || appointmentTypes.length === 0) {
+  if (appointmentTypes.length === 0) {
     return (
       <Box textAlign="center" mt={4}>
         <Typography>No appointment types defined.</Typography>
@@ -60,9 +60,15 @@ export default function AppointmentTypesTable({
             <TableCell>{at.order ?? index + 1}</TableCell>
             <TableCell>{at.title}</TableCell>
             <TableCell>{at.description || 'No description'}</TableCell>
-            <TableCell>{at.durationMinutes != null ? at.durationMinutes : '-'}</TableCell>
+            <TableCell>{
+              typeof at.durationMinutes === 'number' 
+                ? at.durationMinutes 
+                : '-'
+            }</TableCell>
             <TableCell>
-              {at.price != null ? `$${at.price.toFixed(2)}` : '-'}
+              {typeof at.price === 'number'
+                ? `$${at.price.toFixed(2)}`
+                : '-'}
             </TableCell>
             <TableCell align="center">
               <IconButton size="small" onClick={() => onEdit(at)}>

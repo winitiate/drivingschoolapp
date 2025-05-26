@@ -4,50 +4,81 @@ import { useState, useEffect, useMemo } from 'react'
 import { NavItem } from '../../components/Layout/NavMenu'
 import { useAuth } from '../../auth/useAuth'
 import { FirestoreServiceLocationStore } from '../../data/FirestoreServiceLocationStore'
+import { FirestoreServiceProviderStore } from '../../data/FirestoreServiceProviderStore'
 
 export function useDashboardLinks(): NavItem[] {
   const { user, signOutUser } = useAuth()
-  const [singleLocName, setSingleLocName] = useState<string>('Service Location')
-  const [loadingLocName, setLoadingLocName] = useState<boolean>(false)
 
-  // If the user only has one service-location, fetch its name
+  // For single‐location naming
+  const [singleLocName, setSingleLocName] = useState('Service Location')
+  const [loadingLocName, setLoadingLocName] = useState(false)
+
+  // For single‐provider selection
+  const [providerId, setProviderId] = useState<string | null>(null)
+  const [providerCount, setProviderCount] = useState(0)
+
+  // ——————————————————————————————————————————
+  // 1) Load single location’s name if only one
+  // ——————————————————————————————————————————
   useEffect(() => {
     if (!user) return
-    const ids = Array.from(new Set([
-      ...(user.ownedLocationIds || []),
-      ...(user.adminLocationIds || []),
-    ]))
+    const ids = Array.from(
+      new Set([
+        ...(user.ownedLocationIds || []),
+        ...(user.adminLocationIds || []),
+      ]),
+    )
     if (ids.length === 1) {
       setLoadingLocName(true)
       const store = new FirestoreServiceLocationStore()
-      const id = ids[0]
-      if (typeof store.get === 'function') {
-        store.get(id)
-          .then(loc => loc?.name && setSingleLocName(loc.name))
-          .finally(() => setLoadingLocName(false))
-      } else {
-        store.listAll()
-          .then(all => {
-            const loc = all.find(l => l.id === id)
-            if (loc?.name) setSingleLocName(loc.name)
-          })
-          .finally(() => setLoadingLocName(false))
-      }
-    }
-  }, [
-    user?.ownedLocationIds?.join(','),
-    user?.adminLocationIds?.join(','),
-  ])
+      const singleId = ids[0]
 
+      // Firestore store may offer .get or fallback to .listAll()
+      const load =
+        typeof (store as any).get === 'function'
+          ? (store as any).get(singleId)
+          : store.listAll().then((all: any[]) =>
+              all.find(l => l.id === singleId),
+            )
+
+      load
+        .then((loc: any) => {
+          if (loc?.name) setSingleLocName(loc.name)
+        })
+        .finally(() => {
+          setLoadingLocName(false)
+        })
+    }
+  }, [user])
+
+  // ——————————————————————————————————————————
+  // 2) Load provider docs if “serviceProvider” role
+  // ——————————————————————————————————————————
+  useEffect(() => {
+    if (!user?.roles?.includes('serviceProvider')) return
+
+    ;(async () => {
+      const store = new FirestoreServiceProviderStore()
+      const all = await store.listAll()
+      const mine = all.filter(p => p.userId === user.uid)
+
+      setProviderCount(mine.length)
+      setProviderId(mine.length === 1 ? mine[0].id : null)
+    })()
+  }, [user])
+
+  // ——————————————————————————————————————————
+  // 3) Build nav list (memoized)
+  // ——————————————————————————————————————————
   return useMemo<NavItem[]>(() => {
     const out: NavItem[] = [{ label: 'Home', to: '/' }]
 
-    // 👉 Not signed in → show all available sign-in flows
+    // Not signed in → show sign-in links
     if (!user) {
       out.push(
-        { label: 'Client Sign In',            to: '/sign-in' },
-        { label: 'Service Provider Sign In',  to: '/service-provider/sign-in' },
-        { label: 'Business Sign In',          to: '/business/sign-in' },
+        { label: 'Client Sign In', to: '/sign-in' },
+        { label: 'Service Provider Sign In', to: '/service-provider/sign-in' },
+        { label: 'Business Sign In', to: '/business/sign-in' },
       )
       return out
     }
@@ -66,10 +97,7 @@ export function useDashboardLinks(): NavItem[] {
     }
 
     // Business Owner / Staff
-    const bizIds = Array.from(new Set([
-      ...ownedBusinessIds,
-      ...memberBusinessIds,
-    ]))
+    const bizIds = Array.from(new Set([...ownedBusinessIds, ...memberBusinessIds]))
     if (bizIds.length > 1) {
       out.push({ label: 'Business Owner Dashboard', to: '/business' })
     } else if (bizIds.length === 1) {
@@ -80,33 +108,28 @@ export function useDashboardLinks(): NavItem[] {
     }
 
     // Service-Location Admin / Owner
-    const slIds = Array.from(new Set([
-      ...(user.ownedLocationIds || []),
-      ...(user.adminLocationIds || []),
-    ]))
+    const slIds = Array.from(
+      new Set([...(user.ownedLocationIds || []), ...(user.adminLocationIds || [])]),
+    )
     if (slIds.length > 1) {
       out.push({ label: 'Service Locations', to: '/service-location' })
     } else if (slIds.length === 1) {
       out.push({
-        label: loadingLocName
-          ? 'Loading…'
-          : `${singleLocName} Dashboard`,
+        label: loadingLocName ? 'Loading…' : `${singleLocName} Dashboard`,
         to: `/service-location/${slIds[0]}`,
       })
     }
 
     // Service-Provider
     if (roles.includes('serviceProvider')) {
-      if (providerLocationIds.length > 1) {
+      if (providerCount > 1) {
+        out.push({ label: 'Service Provider Dashboard', to: '/service-provider' })
+      } else if (providerId) {
         out.push({
           label: 'Service Provider Dashboard',
-          to: '/service-provider',
+          to: `/service-provider/${providerId}`,
         })
-      } else if (providerLocationIds.length === 1) {
-        out.push({
-          label: 'Service Provider Dashboard',
-          to: `/service-provider/${providerLocationIds[0]}`,
-        })
+        // ← **We removed** the “My Appointments” entry here
       }
     }
 
@@ -122,7 +145,7 @@ export function useDashboardLinks(): NavItem[] {
       }
     }
 
-    // Sign Out
+    // Always include “Sign Out”
     out.push({ label: 'Sign Out', action: () => signOutUser() })
 
     return out
@@ -131,5 +154,7 @@ export function useDashboardLinks(): NavItem[] {
     signOutUser,
     singleLocName,
     loadingLocName,
+    providerId,
+    providerCount,
   ])
 }

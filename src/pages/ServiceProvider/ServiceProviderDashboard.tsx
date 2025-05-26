@@ -1,36 +1,34 @@
 // src/pages/ServiceProvider/ServiceProviderDashboard.tsx
-
 import React from 'react';
-import { Container, Box, Typography, Button } from '@mui/material';
+import { Box, Button, Container, Typography } from '@mui/material';
+import { Link as RouterLink, useParams } from 'react-router-dom';
 import { useAuth } from '../../auth/useAuth';
-import { Link as RouterLink } from 'react-router-dom';
 
 export default function ServiceProviderDashboard() {
   const { user, signOutUser } = useAuth();
+  const { serviceProviderId } = useParams<{ serviceProviderId: string }>();
 
   return (
-    <Container maxWidth="md">
-      <Box mt={4} mb={2} textAlign="center">
-        <Typography variant="h4">Service Provider Dashboard</Typography>
-        <Typography variant="subtitle1" color="textSecondary">
-          Welcome, {user?.email}
-        </Typography>
-      </Box>
+    <Container maxWidth="md" sx={{ textAlign: 'center', mt: 6 }}>
+      <Typography variant="h4" gutterBottom>
+        Service Provider Dashboard
+      </Typography>
 
-      {/* TODO: Add service provider–specific portal content here */}
-      <Box display="flex" justifyContent="center" gap={2} mb={4}>
+      <Typography variant="subtitle1" gutterBottom>
+        Welcome, {user?.email}
+      </Typography>
+
+      <Box display="flex" justifyContent="center" gap={2} mt={3}>
+        {/* ← no disabled prop – always clickable */}
         <Button
           component={RouterLink}
-          to="/service-provider/appointments"
+          to={`/service-provider/${serviceProviderId}/appointments`}
           variant="contained"
         >
           My Appointments
         </Button>
-        <Button
-          color="inherit"
-          onClick={signOutUser}
-          variant="outlined"
-        >
+
+        <Button variant="outlined" onClick={signOutUser} color="inherit">
           Sign Out
         </Button>
       </Box>
