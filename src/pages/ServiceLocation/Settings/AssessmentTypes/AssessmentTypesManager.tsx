@@ -1,5 +1,5 @@
 /**
- * AssessmentTypesManager.tsx
+ * src\pages\ServiceLocation\Settings\AssessmentTypes\AssessmentTypesManager.tsx
  *
  * Admin interface for managing assessment types at a specific service location.
  */

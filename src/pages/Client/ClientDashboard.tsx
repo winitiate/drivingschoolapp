@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   useParams,
+  useNavigate,
   Navigate,
   Link as RouterLink,
 } from 'react-router-dom';
@@ -31,61 +32,59 @@ import type { Appointment } from '../../models/Appointment';
 type Option = { id: string; label: string };
 
 export default function ClientDashboard() {
-  const { id: serviceLocationId } = useParams<{ id: string }>();
+  const { id: clientId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
 
-  // 1. Load this client's appointments
+  // load this client's appointments
   const {
     appointments,
     loading: apptLoading,
     error: apptError,
-  } = useClientAppointments(user?.uid || '', serviceLocationId || '');
+  } = useClientAppointments(user?.uid || '', clientId || '');
 
-  // 2. Dropdown options
+  // dropdown options
   const [clientOpt, setClientOpt] = useState<Option | null>(null);
   const [providerOpts, setProviderOpts] = useState<Option[]>([]);
   const [typeOpts, setTypeOpts] = useState<Option[]>([]);
 
   const db = getFirestore();
 
-  // 3. Fetch client record, all providers, all appointment types
+  // fetch client, providers, types
   useEffect(() => {
-    if (!user?.uid || !serviceLocationId) return;
+    if (!user?.uid || !clientId) return;
 
     const clientStore = new FirestoreClientStore();
     const providerStore = new FirestoreServiceProviderStore();
     const typeStore = new FirestoreAppointmentTypeStore();
 
     (async () => {
-      // a) my client doc
-      const allClients = await clientStore.listByServiceLocation(serviceLocationId);
+      // your existing logic to set clientOpt, providerOpts, typeOpts
+      const allClients = await clientStore.listByServiceLocation(clientId);
       const me = allClients.find(c => c.userId === user.uid);
       if (me) {
         const snap = await getDoc(doc(db, 'users', me.userId));
         const d = snap.exists() ? snap.data() : {};
-        const name = `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Unnamed Client';
+        const name = `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'You';
         setClientOpt({ id: me.id!, label: name });
       }
 
-      // b) providers
-      const rawProviders = await providerStore.listByServiceLocation(serviceLocationId);
+      const rawProviders = await providerStore.listByServiceLocation(clientId);
       const provs = await Promise.all(
         rawProviders.map(async p => {
           const snap = await getDoc(doc(db, 'users', p.userId));
           const d = snap.exists() ? snap.data() : {};
-          const name = `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Unnamed Provider';
+          const name = `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Provider';
           return { id: p.id!, label: name };
         })
       );
       setProviderOpts(provs);
 
-      // c) types
-      const rawTypes = await typeStore.listByServiceLocation(serviceLocationId);
+      const rawTypes = await typeStore.listByServiceLocation(clientId);
       setTypeOpts(rawTypes.map(t => ({ id: t.id!, label: t.title })));
     })();
-  }, [user?.uid, serviceLocationId, db]);
+  }, [user?.uid, clientId, db]);
 
-  // 4. Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Appointment | null>(null);
 
@@ -110,7 +109,7 @@ export default function ClientDashboard() {
     []
   );
 
-  // 5. Guards & loading
+  // guard loading/auth
   if (authLoading) {
     return (
       <Box textAlign="center" mt={8}>
@@ -119,9 +118,7 @@ export default function ClientDashboard() {
     );
   }
   if (!user) return <Navigate to="/sign-in" replace />;
-  if (!serviceLocationId) return <Navigate to="/" replace />;
-
-  const bookingLink = `/client/${serviceLocationId}/booking`;
+  if (!clientId) return <Navigate to="/" replace />;
 
   return (
     <Box component="main" sx={{ p: 4, maxWidth: 600, mx: 'auto' }}>
@@ -140,18 +137,21 @@ export default function ClientDashboard() {
         loading={apptLoading}
         error={apptError || null}
         onEdit={handleEdit}
+        onViewAssessment={(appt) =>
+          navigate(`/client/${clientId}/appointments/${appt.id}`)
+        }
       />
 
       <Box sx={{ textAlign: 'center', mt: 4 }}>
-        <Button component={RouterLink} to={bookingLink} variant="contained">
+        <Button component={RouterLink} to={`/client/${clientId}/booking`} variant="contained">
           Book An Appointment
         </Button>
       </Box>
 
-      {!!dialogOpen && editing && clientOpt && (
+      {dialogOpen && editing && clientOpt && (
         <AppointmentFormDialog
           open={dialogOpen}
-          serviceLocationId={serviceLocationId}
+          serviceLocationId={clientId}
           initialData={editing}
           onClose={() => setDialogOpen(false)}
           onSave={handleSave}

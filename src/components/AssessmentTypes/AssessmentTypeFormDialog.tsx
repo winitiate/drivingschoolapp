@@ -1,24 +1,5 @@
 // src/components/AssessmentTypes/AssessmentTypeFormDialog.tsx
 
-/**
- * AssessmentTypeFormDialog.tsx
- *
- * Modal dialog for creating or editing an assessment type.
- * - Captures title, description, order, and associated grading scale.
- * - Scopes the assessment type to a specific service location.
- * - Passes the completed AssessmentType object back via onSave;
- *   parent components should use the assessmentTypeStore abstraction
- *   to persist the data.
- *
- * Props:
- *  • open: boolean — whether the dialog is visible  
- *  • serviceLocationId: string — ID of the current service location  
- *  • initialData?: AssessmentType | null — existing data for edit mode  
- *  • onClose(): void — callback to close the dialog  
- *  • onSave(at: AssessmentType): void — callback after save  
- *  • gradingScales: Array<{ id: string; title: string }> — available scales  
- */
-
 import React, { useState, useEffect } from 'react';
 import {
   Dialog,
@@ -32,6 +13,7 @@ import {
   Box,
 } from '@mui/material';
 import { v4 as uuidv4 } from 'uuid';
+
 import type { AssessmentType } from '../../models/AssessmentType';
 
 export interface AssessmentTypeFormDialogProps {
@@ -62,7 +44,11 @@ export default function AssessmentTypeFormDialog({
     if (initialData) {
       setTitle(initialData.title);
       setDescription(initialData.description || '');
-      setOrder(initialData.number ?? '');
+      setOrder(
+        typeof initialData.number === 'number'
+          ? initialData.number
+          : ''
+      );
       setGradingScaleId(initialData.gradingScaleId || '');
     } else {
       setTitle('');
@@ -73,14 +59,19 @@ export default function AssessmentTypeFormDialog({
   }, [initialData]);
 
   const handleSubmit = () => {
+    const id = initialData?.id || uuidv4();
+
+    // Build the AssessmentType object, omitting `number` if it's blank
     const at: AssessmentType = {
-      id: initialData?.id || uuidv4(),
+      id,
       serviceLocationId,
       title,
       description,
-      number: order === '' ? undefined : Number(order),
       gradingScaleId,
+      // only include `number` when order is a non-empty value
+      ...(order !== '' ? { number: Number(order) } : {}),
     };
+
     onSave(at);
     onClose();
   };
@@ -115,7 +106,11 @@ export default function AssessmentTypeFormDialog({
               fullWidth
               value={order}
               onChange={(e) =>
-                setOrder(e.target.value === '' ? '' : Number(e.target.value))
+                setOrder(
+                  e.target.value === ''
+                    ? ''
+                    : Number(e.target.value)
+                )
               }
             />
           </Grid>

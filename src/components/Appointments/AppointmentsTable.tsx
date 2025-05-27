@@ -1,16 +1,5 @@
 // src/components/Appointments/AppointmentsTable.tsx
 
-/**
- * AppointmentsTable.tsx
- *
- * Presentational table component for listing appointments.
- * Receives an array of Appointment objects—each enriched with
- * `clientName` and `serviceProviderName`—and callbacks to invoke
- * when the user clicks “Edit”. Doesn’t perform any data fetching—
- * parent components should use the appointmentStore abstraction
- * to load/save data.
- */
-
 import React from 'react';
 import {
   Table,
@@ -33,6 +22,10 @@ export interface AppointmentsTableProps {
   error: string | null;
   /** Callback when the Edit button is clicked */
   onEdit: (appointment: Appointment) => void;
+  /** Optional callback when the Assess button is clicked (service-provider) */
+  onAssess?: (appointment: Appointment) => void;
+  /** Optional callback when the View Assessment button is clicked (client) */
+  onViewAssessment?: (appointment: Appointment) => void;
 }
 
 export default function AppointmentsTable({
@@ -40,6 +33,8 @@ export default function AppointmentsTable({
   loading,
   error,
   onEdit,
+  onAssess,
+  onViewAssessment,
 }: AppointmentsTableProps) {
   if (loading) {
     return (
@@ -82,9 +77,35 @@ export default function AppointmentsTable({
             <TableCell>{appt.date ?? '—'}</TableCell>
             <TableCell>{appt.time ?? '—'}</TableCell>
             <TableCell align="center">
-              <Button size="small" onClick={() => onEdit(appt)}>
-                Edit
-              </Button>
+              <Box display="flex" justifyContent="center" gap={1} flexWrap="nowrap">
+                <Button
+                  size="small"
+                  onClick={() => onEdit(appt)}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Edit
+                </Button>
+
+                {onAssess && (
+                  <Button
+                    size="small"
+                    onClick={() => onAssess(appt)}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    Assess
+                  </Button>
+                )}
+
+                {onViewAssessment && (
+                  <Button
+                    size="small"
+                    onClick={() => onViewAssessment(appt)}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    View Assessment
+                  </Button>
+                )}
+              </Box>
             </TableCell>
           </TableRow>
         ))}
