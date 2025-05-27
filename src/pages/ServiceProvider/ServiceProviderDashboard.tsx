@@ -1,4 +1,5 @@
 // src/pages/ServiceProvider/ServiceProviderDashboard.tsx
+
 import React from 'react';
 import { Box, Button, Container, Typography } from '@mui/material';
 import { Link as RouterLink, useParams } from 'react-router-dom';
@@ -19,7 +20,6 @@ export default function ServiceProviderDashboard() {
       </Typography>
 
       <Box display="flex" justifyContent="center" gap={2} mt={3}>
-        {/* ← no disabled prop – always clickable */}
         <Button
           component={RouterLink}
           to={`/service-provider/${serviceProviderId}/appointments`}
@@ -27,7 +27,13 @@ export default function ServiceProviderDashboard() {
         >
           My Appointments
         </Button>
-
+        <Button
+          component={RouterLink}
+          to={`/service-provider/${serviceProviderId}/availability`}
+          variant="outlined"
+        >
+          Manage Availability
+        </Button>
         <Button variant="outlined" onClick={signOutUser} color="inherit">
           Sign Out
         </Button>

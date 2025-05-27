@@ -4,17 +4,18 @@ import React from 'react';
 import { Route } from 'react-router-dom';
 
 import ProtectedServiceProviderRoute from '../components/Auth/ProtectedServiceProviderRoute';
-import ServiceProviderLayout        from '../layouts/ServiceProviderLayout';
+import ServiceProviderLayout         from '../layouts/ServiceProviderLayout';
 
-import ServiceProviderSelect        from '../pages/ServiceProvider/ServiceProviderSelect';
-import ServiceProviderDashboard     from '../pages/ServiceProvider/ServiceProviderDashboard';
-import ServiceProviderAppointments  from '../pages/ServiceProvider/ServiceProviderAppointments';
-import AssessmentPage               from '../pages/ServiceProvider/AssessmentPage';
+import ServiceProviderSelect         from '../pages/ServiceProvider/ServiceProviderSelect';
+import ServiceProviderDashboard      from '../pages/ServiceProvider/ServiceProviderDashboard';
+import ServiceProviderAppointments   from '../pages/ServiceProvider/ServiceProviderAppointments';
+import ServiceProviderAvailabilityPage from '../pages/ServiceProvider/ServiceProviderAvailabilityPage';
+import AssessmentPage                from '../pages/ServiceProvider/AssessmentPage';
 
 export const ServiceProviderRoutes = (
   <Route path="service-provider" element={<ProtectedServiceProviderRoute />}>
     <Route element={<ServiceProviderLayout />}>
-      {/* /service-provider → select which provider */}
+      {/* /service-provider → pick which provider */}
       <Route index element={<ServiceProviderSelect />} />
 
       {/* /service-provider/:serviceProviderId/... */}
@@ -22,16 +23,23 @@ export const ServiceProviderRoutes = (
         {/* Dashboard */}
         <Route index element={<ServiceProviderDashboard />} />
 
-        {/* Appointments list + nested assess */}
-        <Route path="appointments">
-          {/* /service-provider/:id/appointments */}
-          <Route index element={<ServiceProviderAppointments />} />
-          {/* /service-provider/:id/appointments/:appointmentId/assess */}
-          <Route
-            path=":appointmentId/assess"
-            element={<AssessmentPage />}
-          />
-        </Route>
+        {/* Appointments list */}
+        <Route
+          path="appointments"
+          element={<ServiceProviderAppointments />}
+        />
+
+        {/* Availability management */}
+        <Route
+          path="availability"
+          element={<ServiceProviderAvailabilityPage />}
+        />
+
+        {/* Assessment page */}
+        <Route
+          path="appointments/:appointmentId/assess"
+          element={<AssessmentPage />}
+        />
       </Route>
     </Route>
   </Route>

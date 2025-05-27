@@ -13,6 +13,7 @@ import BusinessDashboard           from '../pages/Business/BusinessDashboard';
 import ManageServiceLocations      from '../pages/Business/ManageServiceLocations';
 import BusinessFormTemplates       from '../pages/Business/BusinessFormTemplates';
 import BusinessSettingsManager     from '../pages/Business/Settings/BusinessSettingsManager';
+import BusinessAvailabilityPage    from '../pages/Business/Settings/BusinessAvailabilityPage';
 
 export const BusinessRoutes = (
   <Route
@@ -20,29 +21,37 @@ export const BusinessRoutes = (
     element={<ProtectedBusinessOwnerRoute redirectPath="business/sign-in" />}
   >
     <Route element={<BusinessOwnerLayout />}>
-      {/* Public/auth routes */}
+      {/* auth */}
       <Route path="sign-in" element={<BusinessSignIn />} />
       <Route path="sign-up" element={<BusinessSignUp />} />
 
-      {/* Selector as index */}
+      {/* selector */}
       <Route index element={<BusinessSelect />} />
 
-      {/* All routes below require a valid :businessId */}
-      <Route path=":businessId" element={<BusinessDashboard />} />
-      <Route
-        path=":businessId/service-locations"
-        element={<ManageServiceLocations />}
-      />
-      <Route
-        path=":businessId/form-templates"
-        element={<BusinessFormTemplates />}
-      />
+      {/* scoped to :businessId */}
+      <Route path=":businessId">
+        {/* dashboard */}
+        <Route index element={<BusinessDashboard />} />
 
-      {/* NEW: Business-level settings */}
-      <Route
-        path=":businessId/settings"
-        element={<BusinessSettingsManager />}
-      />
+        {/* other business routes */}
+        <Route
+          path="service-locations"
+          element={<ManageServiceLocations />}
+        />
+        <Route
+          path="form-templates"
+          element={<BusinessFormTemplates />}
+        />
+
+        {/* settings */}
+        <Route path="settings">
+          <Route index element={<BusinessSettingsManager />} />
+          <Route
+            path="availability"
+            element={<BusinessAvailabilityPage />}
+          />
+        </Route>
+      </Route>
     </Route>
   </Route>
 );

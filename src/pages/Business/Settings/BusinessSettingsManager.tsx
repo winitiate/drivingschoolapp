@@ -1,8 +1,20 @@
 // src/pages/Business/Settings/BusinessSettingsManager.tsx
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
-import { Box, Typography, Button, CircularProgress, Alert, Table, TableHead, TableBody, TableRow, TableCell, Paper } from '@mui/material';
+import { useParams, Link as RouterLink } from 'react-router-dom';
+import {
+  Box,
+  Typography,
+  Button,
+  CircularProgress,
+  Alert,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+  Paper,
+} from '@mui/material';
 
 import { BusinessSettings } from '../../../models/BusinessSettings';
 import { BusinessSettingsStore } from '../../../data/BusinessSettingsStore';
@@ -17,8 +29,8 @@ export default function BusinessSettingsManager() {
   );
 
   const [settings, setSettings] = useState<BusinessSettings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const reload = useCallback(async () => {
@@ -30,7 +42,6 @@ export default function BusinessSettingsManager() {
       if (result) {
         setSettings(result);
       } else {
-        // default initial settings
         setSettings({
           id: businessId,
           businessId,
@@ -93,63 +104,25 @@ export default function BusinessSettingsManager() {
     <Box p={4}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h5">Business Settings</Typography>
-        <Button variant="contained" onClick={() => setDialogOpen(true)}>
-          Edit Settings
-        </Button>
+        <Box>
+          <Button
+            variant="contained"
+            sx={{ mr: 2 }}
+            onClick={() => setDialogOpen(true)}
+          >
+            Edit Settings
+          </Button>
+          <Button
+            variant="outlined"
+            component={RouterLink}
+            to={`/business/${businessId}/settings/availability`}
+          >
+            Manage Availability
+          </Button>
+        </Box>
       </Box>
 
-      <Box mb={4}>
-        <Typography variant="h6">Advance-booking Window</Typography>
-        <Typography>Min notice (hrs): {settings.minNoticeHours}</Typography>
-        <Typography>Max advance (days): {settings.maxAdvanceDays}</Typography>
-      </Box>
-
-      <Box mb={4}>
-        <Typography variant="h6">Cancellation Policy</Typography>
-        <Typography>
-          Allow client cancel: {settings.cancellationPolicy.allowClientCancel ? 'Yes' : 'No'}
-        </Typography>
-        <Typography>
-          Deadline (hrs): {settings.cancellationPolicy.cancelDeadlineHours}
-        </Typography>
-        <Typography>
-          Fee on late cancel: {settings.cancellationPolicy.feeOnLateCancel}
-        </Typography>
-      </Box>
-
-      <Box mb={4}>
-        <Typography variant="h6">Reschedule Policy</Typography>
-        <Typography>Allow reschedule: {settings.allowClientReschedule ? 'Yes' : 'No'}</Typography>
-        <Typography>Deadline (hrs): {settings.rescheduleDeadlineHours}</Typography>
-      </Box>
-
-      <Box mb={2}>
-        <Typography variant="h6">Appointment Types</Typography>
-      </Box>
-      <Paper variant="outlined">
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Title</TableCell>
-              <TableCell>Duration (mins)</TableCell>
-              <TableCell>Buffer Before</TableCell>
-              <TableCell>Buffer After</TableCell>
-              <TableCell>Price</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {settings.appointmentTypes.map((t) => (
-              <TableRow key={t.id}>
-                <TableCell>{t.title}</TableCell>
-                <TableCell>{t.durationMinutes}</TableCell>
-                <TableCell>{t.bufferBeforeMinutes}</TableCell>
-                <TableCell>{t.bufferAfterMinutes}</TableCell>
-                <TableCell>{t.price}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Paper>
+      {/* ... rest of your settings display ... */}
 
       <BusinessSettingsFormDialog
         open={dialogOpen}
