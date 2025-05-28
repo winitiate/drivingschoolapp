@@ -1,5 +1,4 @@
 // src/data/FirestoreAppointmentStore.ts
-
 import {
   getFirestore,
   collection,
@@ -11,65 +10,99 @@ import {
   setDoc,
   deleteDoc,
   Timestamp,
+  serverTimestamp,
 } from "firebase/firestore";
-import { Appointment } from "../models/Appointment";
+import type { Appointment } from "../models/Appointment";
 import { AppointmentStore } from "./AppointmentStore";
 
-const APPOINTMENTS_COLLECTION = "appointments";
+const COLLECTION = "appointments";
 
 export class FirestoreAppointmentStore implements AppointmentStore {
-  private db = getFirestore();
-  private coll = collection(this.db, APPOINTMENTS_COLLECTION);
+  private db   = getFirestore();
+  private coll = collection(this.db, COLLECTION);
+
+  /* ───────── helpers ───────── */
+
+  /** Recursively converts Date → Timestamp before write. */
+  private static toFirestore(obj: any): any {
+    if (obj === null || obj === undefined) return obj;
+    if (obj instanceof Date) return Timestamp.fromDate(obj);
+    if (Array.isArray(obj))  return obj.map(FirestoreAppointmentStore.toFirestore);
+    if (typeof obj === "object") {
+      const out: any = {};
+      Object.entries(obj).forEach(([k, v]) => (out[k] = FirestoreAppointmentStore.toFirestore(v)));
+      return out;
+    }
+    return obj;
+  }
+
+  /** Recursively converts Timestamp → Date after read. */
+  private static fromFirestore(obj: any): any {
+    if (obj === null || obj === undefined) return obj;
+    if (obj instanceof Timestamp) return obj.toDate();
+    if (Array.isArray(obj))       return obj.map(FirestoreAppointmentStore.fromFirestore);
+    if (typeof obj === "object") {
+      const out: any = {};
+      Object.entries(obj).forEach(([k, v]) => (out[k] = FirestoreAppointmentStore.fromFirestore(v)));
+      return out;
+    }
+    return obj;
+  }
+
+  private ref(id?: string) {
+    return id ? doc(this.db, COLLECTION, id) : doc(this.coll);
+  }
+
+  /* ───────── CRUD ───────── */
 
   async getById(id: string): Promise<Appointment | null> {
-    const snap = await getDoc(doc(this.db, APPOINTMENTS_COLLECTION, id));
-    if (!snap.exists()) return null;
-    return { id: snap.id, ...(snap.data() as Appointment) };
+    const snap = await getDoc(this.ref(id));
+    return snap.exists()
+      ? { id: snap.id, ...(FirestoreAppointmentStore.fromFirestore(snap.data()) as Appointment) }
+      : null;
   }
 
   async listAll(): Promise<Appointment[]> {
     const snaps = await getDocs(this.coll);
-    return snaps.docs.map(d => ({ id: d.id, ...(d.data() as Appointment) }));
+    return snaps.docs.map(d => ({
+      id: d.id,
+      ...(FirestoreAppointmentStore.fromFirestore(d.data()) as Appointment),
+    }));
   }
 
   async listByClient(clientId: string): Promise<Appointment[]> {
-    const q = query(this.coll, where("clientId", "==", clientId));
-    const snaps = await getDocs(q);
-    return snaps.docs.map(d => ({ id: d.id, ...(d.data() as Appointment) }));
+    const q  = query(this.coll, where("clientIds", "array-contains", clientId));
+    const ss = await getDocs(q);
+    return ss.docs.map(d => ({
+      id: d.id,
+      ...(FirestoreAppointmentStore.fromFirestore(d.data()) as Appointment),
+    }));
   }
 
-  async listByServiceProvider(serviceProviderId: string): Promise<Appointment[]> {
-    const q = query(this.coll, where("serviceProviderId", "==", serviceProviderId));
-    const snaps = await getDocs(q);
-    return snaps.docs.map(d => ({ id: d.id, ...(d.data() as Appointment) }));
+  async listByServiceProvider(providerId: string): Promise<Appointment[]> {
+    const q  = query(this.coll, where("serviceProviderIds", "array-contains", providerId));
+    const ss = await getDocs(q);
+    return ss.docs.map(d => ({
+      id: d.id,
+      ...(FirestoreAppointmentStore.fromFirestore(d.data()) as Appointment),
+    }));
   }
 
-  async save(appointment: Appointment): Promise<void> {
-    const now = Timestamp.now();
-    // Build payload with singular serviceLocationId
-    const payload: Partial<Appointment> & { updatedAt: any; createdAt?: any } = {
-      clientId:          appointment.clientId,
-      serviceProviderId: appointment.serviceProviderId,
-      appointmentTypeId: appointment.appointmentTypeId,
-      date:              appointment.date,
-      time:              appointment.time,
-      serviceLocationId: appointment.serviceLocationId,  // <-- singular
-      updatedAt:         now,
+  async save(appt: Appointment): Promise<void> {
+    const { id, ...rest } = appt;              // strip id
+    const now = serverTimestamp();
+
+    const payload = {
+      ...FirestoreAppointmentStore.toFirestore(rest),
+      updatedAt: now,
+      ...(id ? {} : { createdAt: now }),
     };
-    if (!appointment.id) {
-      payload.createdAt = now;
-    }
-
-    const ref = appointment.id
-      ? doc(this.db, APPOINTMENTS_COLLECTION, appointment.id)
-      : doc(this.coll);
 
     console.log("▶️ [Store] writing appointment payload:", payload);
-    await setDoc(ref, payload, { merge: true });
+    await setDoc(this.ref(id), payload, { merge: true });
   }
 
   async delete(id: string): Promise<void> {
-    const ref = doc(this.db, APPOINTMENTS_COLLECTION, id);
-    await deleteDoc(ref);
+    await deleteDoc(this.ref(id));
   }
 }

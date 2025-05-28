@@ -17,9 +17,9 @@ import {
 import { getFirestore, doc, getDoc, deleteDoc } from 'firebase/firestore';
 
 import AdminAppointmentDialog from '../../../components/Appointments/Admin/AdminAppointmentDialog';
-import AppointmentsTable          from '../../../components/Appointments/AppointmentsTable';
-import { FirestoreAppointmentStore }     from '../../../data/FirestoreAppointmentStore';
-import { FirestoreClientStore }          from '../../../data/FirestoreClientStore';
+import AppointmentsTable from '../../../components/Appointments/AppointmentsTable';
+import { FirestoreAppointmentStore } from '../../../data/FirestoreAppointmentStore';
+import { FirestoreClientStore } from '../../../data/FirestoreClientStore';
 import { FirestoreServiceProviderStore } from '../../../data/FirestoreServiceProviderStore';
 import { FirestoreAppointmentTypeStore } from '../../../data/FirestoreAppointmentTypeStore';
 
@@ -29,21 +29,21 @@ export default function AppointmentsManager() {
   const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
   const db = useMemo(() => getFirestore(), []);
 
-  const apptStore     = useMemo(() => new FirestoreAppointmentStore(), []);
-  const clientStore   = useMemo(() => new FirestoreClientStore(), []);
+  const apptStore = useMemo(() => new FirestoreAppointmentStore(), []);
+  const clientStore = useMemo(() => new FirestoreClientStore(), []);
   const providerStore = useMemo(() => new FirestoreServiceProviderStore(), []);
-  const typeStore     = useMemo(() => new FirestoreAppointmentTypeStore(), []);
+  const typeStore = useMemo(() => new FirestoreAppointmentTypeStore(), []);
 
-  const [appointments,   setAppointments]   = useState<Appointment[]>([]);
-  const [clientsRaw,     setClientsRaw]     = useState<{ id: string; userId: string }[]>([]);
-  const [providersRaw,   setProvidersRaw]   = useState<{ id: string; userId: string }[]>([]);
-  const [typesRaw,       setTypesRaw]       = useState<{ id: string; title: string }[]>([]);
-  const [clientMap,      setClientMap]      = useState<Record<string,string>>({});
-  const [providerMap,    setProviderMap]    = useState<Record<string,string>>({});
-  const [loading,        setLoading]        = useState(true);
-  const [error,          setError]          = useState<string | null>(null);
-  const [dialogOpen,     setDialogOpen]     = useState(false);
-  const [editing,        setEditing]        = useState<Appointment | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [clientsRaw, setClientsRaw] = useState<{ id: string; userId: string }[]>([]);
+  const [providersRaw, setProvidersRaw] = useState<{ id: string; userId: string }[]>([]);
+  const [typesRaw, setTypesRaw] = useState<{ id: string; title: string }[]>([]);
+  const [clientMap, setClientMap] = useState<Record<string, string>>({});
+  const [providerMap, setProviderMap] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Appointment | null>(null);
 
   const reload = useCallback(async () => {
     if (!serviceLocationId) return;
@@ -51,21 +51,18 @@ export default function AppointmentsManager() {
     setError(null);
 
     try {
-      // 1) load & filter appointments for this location
       const all = await apptStore.listAll();
       const forLoc = all.filter(a =>
         a.serviceLocationIds?.includes(serviceLocationId)
       );
 
-      // 2) load raw client/provider/type entities
       const [cl, pr, tp] = await Promise.all([
         clientStore.listByServiceLocation(serviceLocationId),
         providerStore.listByServiceLocation(serviceLocationId),
         typeStore.listByServiceLocation(serviceLocationId),
       ]);
 
-      // 3) build clientMap
-      const cMap: Record<string,string> = {};
+      const cMap: Record<string, string> = {};
       await Promise.all(
         cl.map(async c => {
           const snap = await getDoc(doc(db, 'users', c.userId));
@@ -76,8 +73,7 @@ export default function AppointmentsManager() {
         })
       );
 
-      // 4) build providerMap
-      const pMap: Record<string,string> = {};
+      const pMap: Record<string, string> = {};
       await Promise.all(
         pr.map(async p => {
           const snap = await getDoc(doc(db, 'users', p.userId));
@@ -88,11 +84,10 @@ export default function AppointmentsManager() {
         })
       );
 
-      // 5) enrich and set appointments
       const enriched = forLoc.map(a => ({
         ...a,
-        clientName:          cMap[a.clientId]         || 'Unknown Client',
-        serviceProviderName: pMap[a.serviceProviderId] || 'Unknown Provider',
+        clientName: a.clientIds?.map(id => cMap[id] || 'Unknown Client').join(', '),
+        serviceProviderName: a.serviceProviderIds?.map(id => pMap[id] || 'Unknown Provider').join(', '),
       }));
 
       setAppointments(enriched);
@@ -119,17 +114,16 @@ export default function AppointmentsManager() {
     reload();
   }, [reload]);
 
-  // 6) map raw → {id,label} for dropdowns
   const clientOpts = clientsRaw.map(c => ({
-    id:    c.id,
+    id: c.id,
     label: clientMap[c.id] || 'Unknown Client',
   }));
   const providerOpts = providersRaw.map(p => ({
-    id:    p.id,
+    id: p.id,
     label: providerMap[p.id] || 'Unknown Provider',
   }));
   const typeOpts = typesRaw.map(t => ({
-    id:    t.id,
+    id: t.id,
     label: t.title,
   }));
 

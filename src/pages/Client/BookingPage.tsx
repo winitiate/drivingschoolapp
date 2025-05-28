@@ -1,19 +1,10 @@
 // src/pages/Client/BookingPage.tsx
-// (capacity-aware dates, first-day jump, live availability updates,
-//  and full “Thursday, June 2 2025 12:00PM – 4:30PM” slot labels)
+// ­Capacity-aware booking page that saves modern Appointment fields only.
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/useAuth";
-import {
-  getFirestore,
-  doc,
-  getDoc,
-  collection,
-  query,
-  where,
-  onSnapshot,
-} from "firebase/firestore";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
 
 import {
   Box,
@@ -47,54 +38,55 @@ import { FirestoreAvailabilityStore } from "../../data/FirestoreAvailabilityStor
 import type { Appointment } from "../../models/Appointment";
 import type { Availability, DailySlot } from "../../models/Availability";
 
+/* ───────────────────────────────────────────────────────────── */
+
 export default function BookingPage() {
   const { id: locId } = useParams<{ id: string }>();
   const { user }      = useAuth();
 
-  /* ---------- guards ---------- */
+  /* ───────── guards ───────── */
   if (!user) return <Navigate to="/sign-in" replace />;
   if (!locId || !user.clientLocationIds?.includes(locId))
     return <Navigate to="/" replace />;
 
-  /* ---------- stores ---------- */
-  const db                 = useMemo(() => getFirestore(), []);
-  const apptStore          = useMemo(() => new FirestoreAppointmentStore(), []);
-  const typeStore          = useMemo(() => new FirestoreAppointmentTypeStore(), []);
-  const providerStore      = useMemo(() => new FirestoreServiceProviderStore(), []);
-  const availabilityStore  = useMemo(() => new FirestoreAvailabilityStore(), []);
+  /* ───────── stores ───────── */
+  const db                = useMemo(() => getFirestore(), []);
+  const apptStore         = useMemo(() => new FirestoreAppointmentStore(), []);
+  const typeStore         = useMemo(() => new FirestoreAppointmentTypeStore(), []);
+  const providerStore     = useMemo(() => new FirestoreServiceProviderStore(), []);
+  const availabilityStore = useMemo(() => new FirestoreAvailabilityStore(), []);
 
-  /* ---------- dropdown / UI state ---------- */
+  /* ───────── dropdown / UI state ───────── */
   const [types, setTypes] = useState<{ id: string; title: string }[]>([]);
   const [providers, setProviders] = useState<
     { id: string; name: string; maxSimultaneousClients: number }[]
   >([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
-  const [selectedType, setSelectedType]         = useState("");
+  const [error,   setError]   = useState<string | null>(null);
+  const [selectedType,     setSelectedType]     = useState("");
   const [selectedProvider, setSelectedProvider] = useState("any");
 
-  /* ---------- availability / appointments ---------- */
+  /* ───────── availability / appts ───────── */
   const [availabilities, setAvailabilities] = useState<Availability[]>([]);
-  const [availLoading, setAvailLoading]     = useState(false);
+  const [availLoading,   setAvailLoading]   = useState(false);
 
-  // 30-day appointment cache {dateISO -> Appointment[]}
+  // Map YYYY-MM-DD → Appointment[]
   const [apptsByDate, setApptsByDate] = useState<Map<string, Appointment[]>>(new Map());
   const [existingAppointments, setExistingAppointments] = useState<Appointment[]>([]);
 
-  /* ---------- calendar ---------- */
+  /* ───────── calendar ───────── */
   const next30 = useMemo(
     () => Array.from({ length: 30 }, (_, i) => dayjs().add(i, "day")),
     []
   );
   const [availableDates, setAvailableDates] = useState<Dayjs[]>([]);
-  const [selectedDate, setSelectedDate]     = useState<Dayjs | null>(null);
-  const [slots, setSlots]                   = useState<DailySlot[]>([]);
-  const [selectedSlot, setSelectedSlot]     = useState<DailySlot | null>(null);
-  const [selectedSlotProviderId, setSelectedSlotProviderId] =
-    useState<string | null>(null);
-  const [confirmOpen, setConfirmOpen]       = useState(false);
+  const [selectedDate,   setSelectedDate]   = useState<Dayjs | null>(null);
+  const [slots,          setSlots]          = useState<DailySlot[]>([]);
+  const [selectedSlot,          setSelectedSlot]          = useState<DailySlot | null>(null);
+  const [selectedSlotProviderId, setSelectedSlotProviderId] = useState<string | null>(null);
+  const [confirmOpen,           setConfirmOpen]            = useState(false);
 
-  /* ---------- 1: load types & providers ---------- */
+  /* ───────── 1. load types & providers ───────── */
   useEffect(() => {
     setLoading(true);
     Promise.all([
@@ -127,7 +119,7 @@ export default function BookingPage() {
     if (types.length === 1) setSelectedType(types[0].id);
   }, [types]);
 
-  /* ---------- 2: preload 30-day appointments cache ---------- */
+  /* ───────── 2. preload 30-day appointments ───────── */
   useEffect(() => {
     if (providers.length === 0) return;
 
@@ -141,78 +133,31 @@ export default function BookingPage() {
       } else {
         appts = await apptStore.listByServiceProvider(selectedProvider);
       }
+
       const filtered = appts.filter(
         (a) =>
           a.serviceLocationId === locId &&
-          a.date &&
-          next30.some((d) => d.format("YYYY-MM-DD") === a.date)
+          a.startTime &&
+          next30.some(
+            (d) => d.format("YYYY-MM-DD") === dayjs(a.startTime).format("YYYY-MM-DD")
+          )
       );
+
       const map = new Map<string, Appointment[]>();
       filtered.forEach((a) => {
-        const list = map.get(a.date!) ?? [];
+        const iso = dayjs(a.startTime).format("YYYY-MM-DD");
+        const list = map.get(iso) ?? [];
         list.push(a);
-        map.set(a.date!, list);
+        map.set(iso, list);
       });
       setApptsByDate(map);
     })();
   }, [providers, selectedProvider, apptStore, locId, next30]);
 
-  /* ---------- 3: live subscribe to Availability docs ---------- */
-  useEffect(() => {
-    if (!selectedProvider) return;
-    setAvailLoading(true);
-
-    let unsub: () => void;
-    if (selectedProvider === "any") {
-      const q = query(
-        collection(db, "availabilities"),
-        where("scope", "==", "provider")
-      );
-      unsub = onSnapshot(
-        q,
-        (snap) => {
-          const arr = snap.docs.map((d) => ({
-            id: d.id,
-            ...(d.data() as any),
-          })) as Availability[];
-          setAvailabilities(arr);
-          setAvailLoading(false);
-        },
-        (e) => {
-          console.error(e);
-          setAvailLoading(false);
-        }
-      );
-    } else {
-      const q = query(
-        collection(db, "availabilities"),
-        where("scope", "==", "provider"),
-        where("scopeId", "==", selectedProvider)
-      );
-      unsub = onSnapshot(
-        q,
-        (snap) => {
-          const arr = snap.docs.map((d) => ({
-            id: d.id,
-            ...(d.data() as any),
-          })) as Availability[];
-          setAvailabilities(arr);
-          setAvailLoading(false);
-        },
-        (e) => {
-          console.error(e);
-          setAvailLoading(false);
-        }
-      );
-    }
-    return () => unsub && unsub();
-  }, [selectedProvider, db]);
-
-  /* ---------- helpers ---------- */
+  /* ───────── helpers ───────── */
   const overlaps = (a: Appointment, s: DailySlot, iso: string) => {
-    const aStart = dayjs(`${iso}T${a.time}`);
-    const len    = a.durationMinutes ?? 90;
-    const aEnd   = aStart.add(len, "minute");
+    const aStart = dayjs(a.startTime);
+    const aEnd   = dayjs(a.endTime);
     const sStart = dayjs(`${iso}T${s.start}`);
     const sEnd   = dayjs(`${iso}T${s.end}`);
     return aStart.isBefore(sEnd) && aEnd.isAfter(sStart);
@@ -226,12 +171,30 @@ export default function BookingPage() {
   ) => {
     const appts = apptsByDate.get(iso) ?? [];
     const used  = appts.filter(
-      (a) => a.serviceProviderId === pid && overlaps(a, slot, iso)
+      (a) => a.serviceProviderIds?.includes(pid) && overlaps(a, slot, iso)
     ).length;
     return used < cap;
   };
 
-  /* ---------- 4: compute availableDates ---------- */
+  /* ───────── 3. load availabilities ───────── */
+  useEffect(() => {
+    if (!selectedProvider) return;
+    setAvailLoading(true);
+    const loader =
+      selectedProvider === "any"
+        ? availabilityStore
+            .listAll()
+            .then((all) => all.filter((a) => a.scope === "provider"))
+        : availabilityStore
+            .getByScope("provider", selectedProvider)
+            .then((a) => (a ? [a] : []));
+    loader
+      .then(setAvailabilities)
+      .catch(console.error)
+      .finally(() => setAvailLoading(false));
+  }, [selectedProvider, availabilityStore]);
+
+  /* ───────── 4. compute availableDates ───────── */
   useEffect(() => {
     if (availLoading) return;
 
@@ -279,7 +242,7 @@ export default function BookingPage() {
     selectedDate,
   ]);
 
-  /* ---------- 5: auto-select first available date ---------- */
+  /* ───────── 5. auto-select first available date ───────── */
   const firstAvail = availableDates[0] ?? null;
 
   useEffect(() => {
@@ -287,9 +250,9 @@ export default function BookingPage() {
       setSelectedDate(firstAvail);
       buildSlots(firstAvail);
     }
-  }, [firstAvail, selectedDate]); // buildSlots stable
+  }, [firstAvail, selectedDate]); // buildSlots is memo-stable
 
-  /* ---------- 6: existingAppointments for selected date ---------- */
+  /* ───────── 6. existingAppointments for chosen day ───────── */
   useEffect(() => {
     if (!selectedDate) {
       setExistingAppointments([]);
@@ -299,7 +262,7 @@ export default function BookingPage() {
     setExistingAppointments(apptsByDate.get(iso) ?? []);
   }, [selectedDate, apptsByDate]);
 
-  /* ---------- 7: build slots ---------- */
+  /* ───────── 7. build slots list ───────── */
   const buildSlots = useCallback(
     (d: Dayjs | null) => {
       if (!d) {
@@ -324,16 +287,18 @@ export default function BookingPage() {
       });
 
       const uniq = Array.from(
-        new Map(combos.map((c) => [`${c.slot.start}-${c.slot.end}`, c.slot])).values()
+        new Map(
+          combos.map((c) => [`${c.slot.start}-${c.slot.end}`, c.slot])
+        ).values()
       ).sort((a, b) => a.start.localeCompare(b.start));
 
       const filtered = uniq.filter((slot) => {
         if (selectedProvider !== "any") {
-          const prov = providers.find((p) => p.id === selectedProvider)!;
-          const cap  =
-            availabilities.find((a) => a.scopeId === prov.id)?.maxConcurrent ??
-            prov.maxSimultaneousClients;
-          return providerHasRoom(prov.id, slot, iso, cap);
+          const cap =
+            availabilities.find((a) => a.scopeId === selectedProvider)?.maxConcurrent ??
+            providers.find((p) => p.id === selectedProvider)?.maxSimultaneousClients ??
+            Infinity;
+          return providerHasRoom(selectedProvider, slot, iso, cap);
         }
         return providers.some((p) => {
           const offers = combos.some(
@@ -356,7 +321,7 @@ export default function BookingPage() {
     buildSlots(selectedDate);
   }, [selectedDate, existingAppointments, buildSlots]);
 
-  /* ---------- 8: handlers ---------- */
+  /* ───────── 8. handlers ───────── */
   const onDateChange = (d: Dayjs | null) => {
     setSelectedDate(d);
     buildSlots(d);
@@ -384,31 +349,38 @@ export default function BookingPage() {
 
   const onConfirm = async () => {
     if (!selectedDate || !selectedSlot) return;
-    const iso = selectedDate.format("YYYY-MM-DD");
-    const duration = dayjs(selectedSlot.end, "HH:mm").diff(
-      dayjs(selectedSlot.start, "HH:mm"),
-      "minute"
-    );
+
+    const iso      = selectedDate.format("YYYY-MM-DD");
+    const startDT  = dayjs(`${iso}T${selectedSlot.start}`);
+    const endDT    = dayjs(`${iso}T${selectedSlot.end}`);
+    const duration = endDT.diff(startDT, "minute");
+
     const payload: Appointment = {
-      clientId:          user.uid,
-      serviceProviderId: selectedSlotProviderId ?? "",
-      serviceLocationId: locId,
-      appointmentTypeId: selectedType,
-      date:              iso,
-      time:              selectedSlot.start,
-      durationMinutes:   duration,
-      status:            "scheduled",
-      notes:             "",
+      appointmentTypeId:  selectedType,
+      clientIds:          [user.uid],
+      serviceProviderIds: [selectedSlotProviderId ?? ""],
+      serviceLocationId:  locId,
+
+      startTime:          startDT.toDate(),
+      endTime:            endDT.toDate(),
+      durationMinutes:    duration,
+
+      status:             "scheduled",
+      notes:              "",
     };
+
     await apptStore.save(payload);
+
     setApptsByDate((prev) => {
-      const list = prev.get(iso) ?? [];
-      return new Map(prev).set(iso, [...list, payload]);
+      const isoKey = startDT.format("YYYY-MM-DD");
+      const list   = prev.get(isoKey) ?? [];
+      return new Map(prev).set(isoKey, [...list, payload]);
     });
+
     setConfirmOpen(false);
   };
 
-  /* ---------- 9: render ---------- */
+  /* ───────── 9. render ───────── */
   if (loading)
     return (
       <Box textAlign="center" mt={4}>
@@ -493,10 +465,7 @@ export default function BookingPage() {
                       {...props}
                       disabled={!ok}
                       sx={{
-                        ...(ok && {
-                          border: "2px solid green",
-                          borderRadius: "50%",
-                        }),
+                        ...(ok && { border: "2px solid green", borderRadius: "50%" }),
                       }}
                     />
                   );
@@ -514,7 +483,7 @@ export default function BookingPage() {
               slots.map((s) => {
                 const dateLabel  = selectedDate.format("dddd, MMMM D, YYYY");
                 const startLabel = dayjs(s.start, "HH:mm").format("h:mmA");
-                const endLabel   = dayjs(s.end, "HH:mm").format("h:mmA");
+                const endLabel   = dayjs(s.end,   "HH:mm").format("h:mmA");
                 return (
                   <Button
                     key={`${s.start}-${s.end}`}

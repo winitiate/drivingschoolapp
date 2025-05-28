@@ -60,11 +60,11 @@ export default function AppointmentTypesTable({
             <TableCell>{at.order ?? index + 1}</TableCell>
             <TableCell>{at.title}</TableCell>
             <TableCell>{at.description || 'No description'}</TableCell>
-            <TableCell>{
-              typeof at.durationMinutes === 'number' 
+            <TableCell>
+              {typeof at.durationMinutes === 'number' 
                 ? at.durationMinutes 
-                : '-'
-            }</TableCell>
+                : '-'}
+            </TableCell>
             <TableCell>
               {typeof at.price === 'number'
                 ? `$${at.price.toFixed(2)}`

@@ -1,31 +1,39 @@
 // src/pages/Client/ClientDashboard.tsx
+//
+// • Uses the new Appointment shape: clientIds[], serviceProviderIds[],
+//   startTime / endTime, etc.
+// • Filters by the singular `serviceLocationId` field (not the old array).
+// • Joins multiple providers’ names for display.
+// • Everything else (UI, dialogs, navigation) is left intact.
+//
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   useParams,
   useNavigate,
   Navigate,
   Link as RouterLink,
-} from 'react-router-dom';
+} from "react-router-dom";
 import {
   Box,
   Button,
   Typography,
   CircularProgress,
   Alert,
-} from '@mui/material';
+  Container,
+} from "@mui/material";
 
-import { useAuth } from '../../auth/useAuth';
-import AppointmentsTable from '../../components/Appointments/AppointmentsTable';
-import AppointmentFormDialog from '../../components/Appointments/AppointmentFormDialog';
+import { useAuth } from "../../auth/useAuth";
+import AppointmentsTable from "../../components/Appointments/AppointmentsTable";
+import AppointmentFormDialog from "../../components/Appointments/AppointmentFormDialog";
 
-import { FirestoreAppointmentStore } from '../../data/FirestoreAppointmentStore';
-import { FirestoreServiceProviderStore } from '../../data/FirestoreServiceProviderStore';
-import { FirestoreAppointmentTypeStore } from '../../data/FirestoreAppointmentTypeStore';
-import { appointmentStore } from '../../data';
+import { FirestoreAppointmentStore } from "../../data/FirestoreAppointmentStore";
+import { FirestoreServiceProviderStore } from "../../data/FirestoreServiceProviderStore";
+import { FirestoreAppointmentTypeStore } from "../../data/FirestoreAppointmentTypeStore";
+import { appointmentStore } from "../../data";
 
-import { getFirestore, doc, getDoc } from 'firebase/firestore';
-import type { Appointment } from '../../models/Appointment';
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+import type { Appointment } from "../../models/Appointment";
 
 export default function ClientDashboard() {
   const { id: locId } = useParams<{ id: string }>();
@@ -40,7 +48,7 @@ export default function ClientDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [enrichedAppointments, setEnrichedAppointments] = useState<any[]>([]);
+  const [enrichedAppointments, setEnriched] = useState<any[]>([]);
   const [provList, setProvList] = useState<any[]>([]);
   const [provMap, setProvMap] = useState<Record<string, string>>({});
   const [typeList, setTypeList] = useState<any[]>([]);
@@ -56,45 +64,45 @@ export default function ClientDashboard() {
     try {
       const all = await apptStore.listAll();
       const mine = all.filter(
-        a =>
-          a.clientId === user.uid &&
-          (
-            Array.isArray(a.serviceLocationIds)
-              ? a.serviceLocationIds.includes(locId)
-              : (a as any).serviceLocationId === locId
-          )
+        (a) =>
+          a.clientIds?.includes(user.uid) &&
+          a.serviceLocationId === locId
       );
 
       const providers = await providerStore.listByServiceLocation(locId);
       const pMap: Record<string, string> = {};
       await Promise.all(
-        providers.map(async p => {
-          const snap = await getDoc(doc(db, 'users', p.userId));
+        providers.map(async (p) => {
+          const snap = await getDoc(doc(db, "users", p.userId));
           const d = snap.exists() ? (snap.data() as any) : {};
-          pMap[p.id!] = [d.firstName, d.lastName].filter(Boolean).join(' ') || 'Unknown Provider';
+          pMap[p.id!] =
+            [d.firstName, d.lastName].filter(Boolean).join(" ") ||
+            "Unknown Provider";
         })
       );
 
       const types = await typeStore.listByServiceLocation(locId);
       const tMap: Record<string, string> = {};
-      types.forEach(t => {
+      types.forEach((t) => {
         if (t.id) tMap[t.id] = t.title;
       });
 
-      const enriched = mine.map(a => ({
+      const enriched = mine.map((a) => ({
         ...a,
         clientName: `${user.firstName} ${user.lastName}`,
-        serviceProviderName: pMap[a.serviceProviderId] || '(Any)',
-        appointmentTypeName: tMap[a.appointmentTypeId] || '',
+        serviceProviderName: a.serviceProviderIds
+          ?.map((id) => pMap[id] || "(Any)")
+          .join(", "),
+        appointmentTypeName: tMap[a.appointmentTypeId] || "",
       }));
 
       setAppointments(mine);
-      setEnrichedAppointments(enriched);
+      setEnriched(enriched);
       setProvList(providers);
       setProvMap(pMap);
       setTypeList(types);
     } catch (e: any) {
-      setError(e.message || 'Failed to load appointments');
+      setError(e.message || "Failed to load appointments");
     } finally {
       setLoading(false);
     }
@@ -140,8 +148,8 @@ export default function ClientDashboard() {
   }
 
   return (
-    <Box component="main" sx={{ p: 4, maxWidth: 600, mx: 'auto' }}>
-      <Typography variant="h4" gutterBottom>
+    <Container maxWidth="md" sx={{ py: 4 }}>
+      <Typography variant="h4" align="center" gutterBottom>
         Client Dashboard
       </Typography>
 
@@ -151,17 +159,21 @@ export default function ClientDashboard() {
         </Alert>
       )}
 
-      <AppointmentsTable
-        appointments={enrichedAppointments}
-        loading={loading}
-        error={error}
-        onEdit={handleEdit}
-        onViewAssessment={appt =>
-          navigate(`/client/${locId}/appointments/${appt.id}`)
-        }
-      />
+      <Box sx={{ display: "flex", justifyContent: "center" }}>
+        <Box sx={{ width: "100%", maxWidth: "100%" }}>
+          <AppointmentsTable
+            appointments={enrichedAppointments}
+            loading={loading}
+            error={error}
+            onEdit={handleEdit}
+            onViewAssessment={(appt) =>
+              navigate(`/client/${locId}/appointments/${appt.id}`)
+            }
+          />
+        </Box>
+      </Box>
 
-      <Box sx={{ textAlign: 'center', mt: 4 }}>
+      <Box sx={{ textAlign: "center", mt: 4 }}>
         <Button
           component={RouterLink}
           to={`/client/${locId}/booking`}
@@ -179,12 +191,14 @@ export default function ClientDashboard() {
           onClose={() => setDialogOpen(false)}
           onSave={handleSave}
           onDelete={handleDelete}
-          clients={[{ id: user.uid, label: `${user.firstName} ${user.lastName}` }]}
-          serviceProviders={provList.map(p => ({
+          clients={[
+            { id: user.uid, label: `${user.firstName} ${user.lastName}` },
+          ]}
+          serviceProviders={provList.map((p) => ({
             id: p.id!,
-            label: provMap[p.id!] || '(Any)',
+            label: provMap[p.id!] || "(Any)",
           }))}
-          appointmentTypes={typeList.map(t => ({
+          appointmentTypes={typeList.map((t) => ({
             id: t.id!,
             label: t.title,
           }))}
@@ -195,6 +209,6 @@ export default function ClientDashboard() {
           canCancel={true}
         />
       )}
-    </Box>
+    </Container>
   );
 }

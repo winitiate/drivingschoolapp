@@ -3,13 +3,15 @@
 import { BaseEntity } from './BaseEntity';
 
 export interface Appointment extends BaseEntity {
-  clientId: string;
-  serviceProviderId: string;
-  lessonTypeId: string;
+  clientIds: string[]; // supports group appointments
+  serviceProviderIds: string[]; // supports co-instructors or multiple providers
+  appointmentTypeId: string; // more generic than lessonTypeId
   serviceLocationId: string;
 
   startTime: Date;
+  endTime: Date;
   durationMinutes: number;
+
   status: 'scheduled' | 'completed' | 'cancelled' | 'no-show';
 
   cancellation?: {
@@ -24,6 +26,11 @@ export interface Appointment extends BaseEntity {
   notes: string;
   locationOverride?: string;
 
-  /** any extra per-business fields */
   customFields?: Record<string, any>;
+
+  metadata?: {
+    createdBy?: string;
+    updatedBy?: string;
+    source?: 'web' | 'mobile' | 'admin';
+  };
 }

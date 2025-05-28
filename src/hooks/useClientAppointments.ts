@@ -42,12 +42,11 @@ export function useClientAppointments(
           return;
         }
 
-        // 2) Load all appointments and filter
+        // 2) Load all appointments and filter by client ID and location ID
         const all = await appointmentStore.listAll();
         const mine = all.filter(a =>
-          a.clientId === client.id &&
-          Array.isArray(a.serviceLocationIds) &&
-          a.serviceLocationIds.includes(serviceLocationId)
+          a.clientIds?.includes(client.id) &&
+          a.serviceLocationId === serviceLocationId
         );
 
         if (!cancelled) setAppointments(mine);
