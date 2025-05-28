@@ -1,4 +1,4 @@
-//src\models\Availability.ts
+// src/models/Availability.ts
 import { BaseEntity } from './BaseEntity';
 
 export interface DailySlot {
@@ -7,16 +7,17 @@ export interface DailySlot {
 }
 
 export interface DailySchedule {
-  weekday: 0 | 1 | 2 | 3 | 4 | 5 | 6;  // 0=Sunday…6=Saturday
+  weekday: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   slots:   DailySlot[];
 }
 
 export type AvailabilityScope = 'business' | 'location' | 'provider';
 
 export interface Availability extends BaseEntity {
-  scope:    AvailabilityScope;
-  scopeId:  string;
-  weekly:   DailySchedule[];
-  blocked:  string[];       // “YYYY-MM-DD”
-  maxPerDay?: number;
+  scope:         AvailabilityScope;
+  scopeId:       string;
+  weekly:        DailySchedule[];
+  blocked:       string[];      // “YYYY-MM-DD_YYYY-MM-DD” or with times
+  maxPerDay?:    number;        // you already had this
+  maxConcurrent?: number;       // NEW: how many clients at once
 }

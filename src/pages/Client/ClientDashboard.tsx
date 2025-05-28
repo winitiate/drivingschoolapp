@@ -1,6 +1,6 @@
 // src/pages/Client/ClientDashboard.tsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   useParams,
   useNavigate,
@@ -16,12 +16,11 @@ import {
 } from '@mui/material';
 
 import { useAuth } from '../../auth/useAuth';
-import { useClientAppointments } from '../../hooks/useClientAppointments';
 
 import AppointmentsTable from '../../components/Appointments/AppointmentsTable';
 import AppointmentFormDialog from '../../components/Appointments/AppointmentFormDialog';
 
-import { FirestoreClientStore } from '../../data/FirestoreClientStore';
+import { FirestoreAppointmentStore } from '../../data/FirestoreAppointmentStore';
 import { FirestoreServiceProviderStore } from '../../data/FirestoreServiceProviderStore';
 import { FirestoreAppointmentTypeStore } from '../../data/FirestoreAppointmentTypeStore';
 import { appointmentStore } from '../../data';
@@ -29,65 +28,92 @@ import { appointmentStore } from '../../data';
 import { getFirestore, doc, getDoc } from 'firebase/firestore';
 import type { Appointment } from '../../models/Appointment';
 
-type Option = { id: string; label: string };
-
 export default function ClientDashboard() {
-  const { id: clientId } = useParams<{ id: string }>();
+  const { id: locId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
+  const db = useMemo(() => getFirestore(), []);
 
-  // load this client's appointments
-  const {
-    appointments,
-    loading: apptLoading,
-    error: apptError,
-  } = useClientAppointments(user?.uid || '', clientId || '');
+  // Firestore stores
+  const apptStore = useMemo(() => new FirestoreAppointmentStore(), []);
+  const providerStore = useMemo(() => new FirestoreServiceProviderStore(), []);
+  const typeStore = useMemo(() => new FirestoreAppointmentTypeStore(), []);
 
-  // dropdown options
-  const [clientOpt, setClientOpt] = useState<Option | null>(null);
-  const [providerOpts, setProviderOpts] = useState<Option[]>([]);
-  const [typeOpts, setTypeOpts] = useState<Option[]>([]);
+  // Loading & error state
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
 
-  const db = getFirestore();
+  // Enriched appointment list
+  type Enriched = Appointment & {
+    clientName: string;
+    serviceProviderName: string;
+    appointmentTypeName: string;
+  };
+  const [appointments, setAppointments] = useState<Enriched[]>([]);
 
-  // fetch client, providers, types
-  useEffect(() => {
-    if (!user?.uid || !clientId) return;
+  // Dialog state
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing]       = useState<Appointment | null>(null);
 
-    const clientStore = new FirestoreClientStore();
-    const providerStore = new FirestoreServiceProviderStore();
-    const typeStore = new FirestoreAppointmentTypeStore();
+  // Fetch & enrich
+  const loadAppointments = useCallback(async () => {
+    if (!user?.uid || !locId) return;
+    setLoading(true);
+    setError(null);
 
-    (async () => {
-      // your existing logic to set clientOpt, providerOpts, typeOpts
-      const allClients = await clientStore.listByServiceLocation(clientId);
-      const me = allClients.find(c => c.userId === user.uid);
-      if (me) {
-        const snap = await getDoc(doc(db, 'users', me.userId));
-        const d = snap.exists() ? snap.data() : {};
-        const name = `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'You';
-        setClientOpt({ id: me.id!, label: name });
-      }
+    try {
+      // 1) load all and filter to this client+location
+      const all = await apptStore.listAll();
+      const mine = all.filter(
+        a =>
+          a.clientId === user.uid &&
+          // support both array or singular field
+          (
+            Array.isArray(a.serviceLocationIds)
+              ? a.serviceLocationIds.includes(locId)
+              : (a as any).serviceLocationId === locId
+          )
+      );
 
-      const rawProviders = await providerStore.listByServiceLocation(clientId);
-      const provs = await Promise.all(
-        rawProviders.map(async p => {
+      // 2) build provider name map
+      const provList = await providerStore.listByServiceLocation(locId);
+      const provMap: Record<string,string> = {};
+      await Promise.all(
+        provList.map(async p => {
           const snap = await getDoc(doc(db, 'users', p.userId));
-          const d = snap.exists() ? snap.data() : {};
-          const name = `${d.firstName || ''} ${d.lastName || ''}`.trim() || 'Provider';
-          return { id: p.id!, label: name };
+          const d = snap.exists() ? (snap.data() as any) : {};
+          provMap[p.id!] = [d.firstName, d.lastName].filter(Boolean).join(' ') || 'Unknown Provider';
         })
       );
-      setProviderOpts(provs);
 
-      const rawTypes = await typeStore.listByServiceLocation(clientId);
-      setTypeOpts(rawTypes.map(t => ({ id: t.id!, label: t.title })));
-    })();
-  }, [user?.uid, clientId, db]);
+      // 3) build type map
+      const typeList = await typeStore.listByServiceLocation(locId);
+      const typeMap: Record<string,string> = {};
+      typeList.forEach(t => {
+        if (t.id) typeMap[t.id] = t.title;
+      });
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Appointment | null>(null);
+      // 4) stitch it all together
+      const enriched: Enriched[] = mine.map(a => ({
+        ...a,
+        clientName: `${user.firstName} ${user.lastName}`,
+        serviceProviderName: provMap[a.serviceProviderId] || '(Any)',
+        appointmentTypeName: typeMap[a.appointmentTypeId] || '',
+      }));
 
+      setAppointments(enriched);
+    } catch (e: any) {
+      setError(e.message || 'Failed to load appointments');
+    } finally {
+      setLoading(false);
+    }
+  }, [user, locId]);
+
+  useEffect(() => {
+    loadAppointments();
+  }, [loadAppointments]);
+
+  // Dialog handlers
   const handleEdit = useCallback((appt: Appointment) => {
     setEditing(appt);
     setDialogOpen(true);
@@ -97,19 +123,21 @@ export default function ClientDashboard() {
     async (updated: Appointment) => {
       await appointmentStore.save(updated);
       setDialogOpen(false);
+      loadAppointments();
     },
-    []
+    [loadAppointments]
   );
 
   const handleDelete = useCallback(
     async (toDelete: Appointment) => {
       await appointmentStore.delete(toDelete.id!);
       setDialogOpen(false);
+      loadAppointments();
     },
-    []
+    [loadAppointments]
   );
 
-  // guard loading/auth
+  // auth & param guards
   if (authLoading) {
     return (
       <Box textAlign="center" mt={8}>
@@ -118,7 +146,9 @@ export default function ClientDashboard() {
     );
   }
   if (!user) return <Navigate to="/sign-in" replace />;
-  if (!clientId) return <Navigate to="/" replace />;
+  if (!locId || !user.clientLocationIds?.includes(locId)) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <Box component="main" sx={{ p: 4, maxWidth: 600, mx: 'auto' }}>
@@ -126,42 +156,52 @@ export default function ClientDashboard() {
         Client Dashboard
       </Typography>
 
-      {apptError && (
+      {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          {apptError}
+          {error}
         </Alert>
       )}
 
       <AppointmentsTable
         appointments={appointments}
-        loading={apptLoading}
-        error={apptError || null}
+        loading={loading}
+        error={error}
         onEdit={handleEdit}
-        onViewAssessment={(appt) =>
-          navigate(`/client/${clientId}/appointments/${appt.id}`)
+        onViewAssessment={appt =>
+          navigate(`/client/${locId}/appointments/${appt.id}`)
         }
       />
 
       <Box sx={{ textAlign: 'center', mt: 4 }}>
-        <Button component={RouterLink} to={`/client/${clientId}/booking`} variant="contained">
+        <Button
+          component={RouterLink}
+          to={`/client/${locId}/booking`}
+          variant="contained"
+        >
           Book An Appointment
         </Button>
       </Box>
 
-      {dialogOpen && editing && clientOpt && (
+      {dialogOpen && editing && (
         <AppointmentFormDialog
           open={dialogOpen}
-          serviceLocationId={clientId}
+          serviceLocationId={locId}
           initialData={editing}
           onClose={() => setDialogOpen(false)}
           onSave={handleSave}
           onDelete={handleDelete}
-          clients={[clientOpt]}
-          serviceProviders={providerOpts}
-          appointmentTypes={typeOpts}
+          clients={[{ id: user.uid, label: `${user.firstName} ${user.lastName}` }]}
+          serviceProviders={provList.map(p => ({
+            id: p.id!,
+            label: provMap[p.id!] || '(Any)',
+          }))}
+          appointmentTypes={typeList.map(t => ({
+            id: t.id!,
+            label: t.title,
+          }))}
           canEditClient={false}
-          canEditAppointmentType={true}
           canEditProvider={true}
+          canEditAppointmentType={true}
           canEditDateTime={true}
           canCancel={true}
         />

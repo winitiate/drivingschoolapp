@@ -1,3 +1,5 @@
+// src/data/FirestoreAvailabilityStore.ts
+
 import {
   getFirestore,
   collection,
@@ -6,60 +8,60 @@ import {
   getDocs,
   doc,
   setDoc,
-  Timestamp,
-  CollectionReference,
-  DocumentReference,
-} from "firebase/firestore";
-import type {
-  Availability,
-  AvailabilityScope,
-} from "../models/Availability";
-import type { AvailabilityStore } from "./AvailabilityStore";
-
-const COLLECTION = "availability";
+} from 'firebase/firestore'
+import type { Availability } from '../models/Availability'
+import type { AvailabilityStore } from './AvailabilityStore'
 
 export class FirestoreAvailabilityStore implements AvailabilityStore {
-  private db = getFirestore();
-  private coll: CollectionReference = collection(this.db, COLLECTION);
+  private db = getFirestore()
+  private coll = collection(this.db, 'availabilities')       // <-- plural
 
-  /** Fetch the one record matching scope+scopeId */
+  /** Fetch the single Availability for a given scope+scopeId */
   async getByScope(
-    scope: AvailabilityScope,
+    scope: Availability['scope'],
     scopeId: string
   ): Promise<Availability | null> {
     const q = query(
       this.coll,
-      where("scope", "==", scope),
-      where("scopeId", "==", scopeId)
-    );
-    const snaps = await getDocs(q);
-    if (snaps.empty) return null;
-    const d = snaps.docs[0];
-    return { id: d.id, ...(d.data() as Availability) };
+      where('scope', '==', scope),
+      where('scopeId', '==', scopeId)
+    )
+    const snaps = await getDocs(q)
+    if (snaps.empty) return null
+    const d = snaps.docs[0]
+    return { id: d.id, ...(d.data() as Availability) }
   }
 
-  /** Fetch every availability doc */
+  /** Return *all* Availability documents */
   async listAll(): Promise<Availability[]> {
-    const snaps = await getDocs(this.coll);
-    return snaps.docs.map((d) => ({ id: d.id, ...(d.data() as Availability) }));
+    const snaps = await getDocs(this.coll)
+    return snaps.docs.map(d => ({ id: d.id, ...(d.data() as Availability) }))
   }
 
-  /** Create or update (merge) */
-  async save(av: Availability): Promise<void> {
-    const now = Timestamp.now();
-    const id = av.id || doc(this.coll).id;
-    const ref: DocumentReference = doc(this.db, COLLECTION, id);
+  /** Create or update an Availability record */
+  async save(avail: Availability): Promise<void> {
+    // determine doc ID
+    const id = avail.id || doc(this.coll).id
+    // build a clean payload, never including undefined
+    const payload: any = {
+      scope: avail.scope,
+      scopeId: avail.scopeId,
+      weekly: avail.weekly || [],
+      blocked: avail.blocked || [],
+    }
+    // only set maxPerDay if provided, otherwise explicitly null to clear
+    payload.maxPerDay =
+      avail.maxPerDay != null ? avail.maxPerDay : null
+
+    // only set maxConcurrent if provided, otherwise null
+    payload.maxConcurrent =
+      avail.maxConcurrent != null ? avail.maxConcurrent : null
+
+    // perform the merge
     await setDoc(
-      ref,
-      {
-        ...av,
-        weekly: av.weekly || [],
-        blocked: av.blocked || [],
-        maxPerDay: av.maxPerDay ?? null,
-        createdAt: av.createdAt || now,
-        updatedAt: now,
-      },
+      doc(this.db, 'availabilities', id),
+      payload,
       { merge: true }
-    );
+    )
   }
 }

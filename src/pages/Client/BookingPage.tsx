@@ -1,11 +1,6 @@
 // src/pages/Client/BookingPage.tsx
 
-import React, {
-  useState,
-  useEffect,
-  useMemo,
-  useCallback,
-} from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/useAuth";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
@@ -46,44 +41,33 @@ export default function BookingPage() {
   const { id: locId } = useParams<{ id: string }>();
   const { user } = useAuth();
 
+  // 1) Must be signed in
   if (!user) return <Navigate to="/sign-in" replace />;
+  // 2) Must belong to this location
   if (!locId || !user.clientLocationIds?.includes(locId)) {
     return <Navigate to="/" replace />;
   }
 
   const db = useMemo(() => getFirestore(), []);
   const apptStore = useMemo(() => new FirestoreAppointmentStore(), []);
-  const typeStore = useMemo(
-    () => new FirestoreAppointmentTypeStore(),
-    []
-  );
-  const providerStore = useMemo(
-    () => new FirestoreServiceProviderStore(),
-    []
-  );
-  const availabilityStore = useMemo(
-    () => new FirestoreAvailabilityStore(),
-    []
-  );
+  const typeStore = useMemo(() => new FirestoreAppointmentTypeStore(), []);
+  const providerStore = useMemo(() => new FirestoreServiceProviderStore(), []);
+  const availabilityStore = useMemo(() => new FirestoreAvailabilityStore(), []);
 
-  // dropdown data
-  const [types, setTypes] = useState<{ id: string; title: string }[]>(
+  // dropdown state
+  const [types, setTypes] = useState<{ id: string; title: string }[]>([]);
+  const [providers, setProviders] = useState<{ id: string; name: string }[]>(
     []
   );
-  const [providers, setProviders] = useState<
-    { id: string; name: string }[]
-  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // user selections
-  const [selectedType, setSelectedType] = useState("");
-  const [selectedProvider, setSelectedProvider] = useState("any");
+  // user picks
+  const [selectedType, setSelectedType] = useState<string>("");
+  const [selectedProvider, setSelectedProvider] = useState<string>("any");
 
-  // availability docs
-  const [availabilities, setAvailabilities] = useState<
-    Availability[]
-  >([]);
+  // availabilities
+  const [availabilities, setAvailabilities] = useState<Availability[]>([]);
   const [availLoading, setAvailLoading] = useState(false);
 
   // calendar + slots
@@ -92,16 +76,18 @@ export default function BookingPage() {
     []
   );
   const [availableDates, setAvailableDates] = useState<Dayjs[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Dayjs | null>(
-    null
-  );
+  const [selectedDate, setSelectedDate] = useState<Dayjs | null>(null);
   const [slots, setSlots] = useState<DailySlot[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<DailySlot | null>(
-    null
-  );
+  const [selectedSlot, setSelectedSlot] = useState<DailySlot | null>(null);
+
+  // <-- which provider actually owns the clicked slot -->
+  const [selectedSlotProviderId, setSelectedSlotProviderId] = useState<
+    string | null
+  >(null);
+
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // 1) load appointment types & providers
+  // 3) Load types & providers
   useEffect(() => {
     setLoading(true);
     Promise.all([
@@ -111,14 +97,11 @@ export default function BookingPage() {
       .then(async ([provList, typeList]) => {
         const provs = await Promise.all(
           provList.map(async (p) => {
-            const snap = await getDoc(
-              doc(db, "users", p.userId)
-            );
+            const snap = await getDoc(doc(db, "users", p.userId));
             const d = snap.exists() ? (snap.data() as any) : {};
             return {
               id: p.id!,
-              name:
-                [d.firstName, d.lastName].filter(Boolean).join(" ") ||
+              name: `${d.firstName || ""} ${d.lastName || ""}`.trim() ||
                 "Unknown",
             };
           })
@@ -130,21 +113,18 @@ export default function BookingPage() {
       .finally(() => setLoading(false));
   }, [locId]);
 
-  // 1a) if only one type, pick it
+  // 3a) Auto‐select if only one type
   useEffect(() => {
-    if (types.length === 1) {
-      setSelectedType(types[0].id);
-    }
+    if (types.length === 1) setSelectedType(types[0].id);
   }, [types]);
 
-  // 2) load availability when provider changes
+  // 4) Load availability when provider changes
   useEffect(() => {
     if (!selectedProvider) return;
     setAvailLoading(true);
 
     const loader =
       selectedProvider === "any"
-        // all provider-scoped docs
         ? availabilityStore
             .listAll()
             .then((all) => all.filter((a) => a.scope === "provider"))
@@ -158,56 +138,51 @@ export default function BookingPage() {
       .finally(() => setAvailLoading(false));
   }, [selectedProvider]);
 
-  // 3) compute truly available days
+  // 5) Compute which next 30 days have slots
   useEffect(() => {
     if (availLoading) return;
     const good = next30.filter((d) => {
       if (d.isBefore(dayjs(), "day")) return false;
       const iso = d.format("YYYY-MM-DD");
-      // blocked?
-      if (availabilities.some((a) => a.blocked.includes(iso)))
-        return false;
-      // any weekly slot on that weekday?
+      if (availabilities.some((a) => a.blocked.includes(iso))) return false;
       return availabilities.some((a) =>
-        a.weekly.some(
-          (w) => w.weekday === d.day() && w.slots.length > 0
-        )
+        a.weekly.some((w) => w.weekday === d.day() && w.slots.length > 0)
       );
     });
     setAvailableDates(good);
   }, [availabilities, availLoading]);
 
-  // 4) reset & auto-pick first date, **and** load its slots
+  // 6) Reset & auto-pick first date + slots
   useEffect(() => {
     setSelectedDate(null);
     setSlots([]);
     setSelectedSlot(null);
+    setSelectedSlotProviderId(null);
+
     if (
       selectedType &&
       selectedProvider &&
       !availLoading &&
-      availableDates.length
+      availableDates.length > 0
     ) {
       const first = availableDates[0];
       setSelectedDate(first);
       loadSlots(first);
     }
-  }, [
-    selectedType,
-    selectedProvider,
-    availLoading,
-    availableDates,
-  ]);
+  }, [selectedType, selectedProvider, availLoading, availableDates]);
 
-  // 5) load time slots for a given date
+  // 7) Gather slots for chosen day
   const loadSlots = useCallback(
     (d: Dayjs | null) => {
-      if (!d) return setSlots([]);
+      if (!d) {
+        setSlots([]);
+        return;
+      }
       const wd = d.day();
-      const all: DailySlot[] = [];
+      let all: DailySlot[] = [];
       availabilities.forEach((a) => {
         const sch = a.weekly.find((w) => w.weekday === wd);
-        if (sch) all.push(...sch.slots);
+        if (sch) all = all.concat(sch.slots);
       });
       const uniq = Array.from(
         new Map(all.map((s) => [`${s.start}-${s.end}`, s])).values()
@@ -217,58 +192,76 @@ export default function BookingPage() {
     [availabilities]
   );
 
+  // 8a) Date picker
   const onDateChange = (d: Dayjs | null) => {
     setSelectedDate(d);
     loadSlots(d);
   };
 
-  // 6) booking
+  // 8b) Slot click — also detect provider for “Any”
   const onSlotClick = (s: DailySlot) => {
+    let providerId: string | null = null;
+    if (selectedProvider !== "any") {
+      providerId = selectedProvider;
+    } else if (selectedDate) {
+      // find availability doc whose weekly slots include this exact slot
+      const avail = availabilities.find((a) =>
+        a.weekly
+          .find((w) => w.weekday === selectedDate.day())
+          ?.slots.some((sl) => sl.start === s.start && sl.end === s.end)
+      );
+      providerId = (avail as any)?.scopeId ?? avail?.id ?? null;
+    }
+
     setSelectedSlot(s);
+    setSelectedSlotProviderId(providerId);
     setConfirmOpen(true);
   };
+
+  // 8c) Confirm & save — now including date/time strings
   const onConfirm = async () => {
     if (!selectedDate || !selectedSlot) return;
-    const start = new Date(
-      `${selectedDate.format("YYYY-MM-DD")}T${selectedSlot.start}`
-    );
-    const dur = dayjs(selectedSlot.end, "HH:mm").diff(
+
+    const dateStr = selectedDate.format("YYYY-MM-DD");
+    const timeStr = selectedSlot.start;
+    const durationMinutes = dayjs(selectedSlot.end, "HH:mm").diff(
       dayjs(selectedSlot.start, "HH:mm"),
       "minute"
     );
+
     const payload: Appointment = {
       clientId: user.uid,
-      serviceProviderId:
-        selectedProvider === "any" ? "" : selectedProvider,
+      serviceProviderId: selectedSlotProviderId ?? "",
       serviceLocationId: locId,
-      lessonTypeId: selectedType,
-      startTime: start,
-      durationMinutes: dur,
+      appointmentTypeId: selectedType,
+      date: dateStr,                 // <-- required now
+      time: timeStr,                 // <-- required now
+      durationMinutes,
       status: "scheduled",
       notes: "",
     };
+
     await apptStore.save(payload);
     setConfirmOpen(false);
   };
 
-  if (loading) {
+  // 9) Loading / error
+  if (loading)
     return (
       <Box textAlign="center" mt={4}>
         <CircularProgress />
       </Box>
     );
-  }
-  if (error) {
-    return <Alert severity="error">{error}</Alert>;
-  }
+  if (error) return <Alert severity="error">{error}</Alert>;
 
-  const typeTitle =
-    types.find((t) => t.id === selectedType)?.title || "";
+  const typeTitle = types.find((t) => t.id === selectedType)?.title || "";
   const provName =
     selectedProvider === "any"
       ? "(Any)"
-      : providers.find((p) => p.id === selectedProvider)
-          ?.name || "";
+      : providers.find((p) => p.id === selectedProvider)?.name || "";
+  const confirmProvName = selectedSlotProviderId
+    ? providers.find((p) => p.id === selectedSlotProviderId)?.name || ""
+    : provName;
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -277,14 +270,12 @@ export default function BookingPage() {
           Book an Appointment
         </Typography>
 
-        {/* 1) Type */}
+        {/* Appointment Type */}
         <FormControl fullWidth sx={{ mb: 2 }}>
           <InputLabel>Appointment Type</InputLabel>
           <Select
             value={selectedType}
-            onChange={(e) =>
-              setSelectedType(e.target.value as string)
-            }
+            onChange={(e) => setSelectedType(e.target.value as string)}
             label="Appointment Type"
           >
             <MenuItem value="">
@@ -298,7 +289,7 @@ export default function BookingPage() {
           </Select>
         </FormControl>
 
-        {/* 2) Provider */}
+        {/* Service Provider */}
         {selectedType && (
           <FormControl fullWidth sx={{ mb: 3 }}>
             <InputLabel>Service Provider</InputLabel>
@@ -319,20 +310,16 @@ export default function BookingPage() {
           </FormControl>
         )}
 
-        {/* 3) Calendar */}
+        {/* Calendar */}
         {selectedType && selectedProvider && (
           <Box sx={{ mb: 3 }}>
-            <Typography variant="h6">
-              Select a Date
-            </Typography>
+            <Typography variant="h6">Select a Date</Typography>
             <DateCalendar
               value={selectedDate}
               onChange={onDateChange}
               disablePast
               shouldDisableDate={(d) =>
-                !availableDates.some((x) =>
-                  x.isSame(d, "day")
-                )
+                !availableDates.some((x) => x.isSame(d, "day"))
               }
               slots={{
                 day: (props) => {
@@ -357,67 +344,54 @@ export default function BookingPage() {
           </Box>
         )}
 
-        {/* 4) Slots */}
-        {selectedDate &&
-          selectedType &&
-          selectedProvider && (
-            <Stack spacing={1} sx={{ mb: 3 }}>
-              <Typography variant="subtitle1">
-                Available Time Slots
-              </Typography>
-              {slots.length > 0 ? (
-                slots.map((s) => (
-                  <Button
-                    key={`${s.start}-${s.end}`}
-                    variant="outlined"
-                    onClick={() => onSlotClick(s)}
-                  >
-                    {s.start} — {s.end}
-                  </Button>
-                ))
-              ) : (
-                <Alert severity="info">
-                  No time slot available on this day.
-                </Alert>
-              )}
-            </Stack>
-          )}
+        {/* Time slots */}
+        {selectedDate && selectedType && selectedProvider && (
+          <Stack spacing={1} sx={{ mb: 3 }}>
+            <Typography variant="subtitle1">
+              Available Time Slots
+            </Typography>
+            {slots.length > 0 ? (
+              slots.map((s) => (
+                <Button
+                  key={`${s.start}-${s.end}`}
+                  variant="outlined"
+                  onClick={() => onSlotClick(s)}
+                >
+                  {s.start} — {s.end}
+                </Button>
+              ))
+            ) : (
+              <Alert severity="info">
+                No time slot available on this day.
+              </Alert>
+            )}
+          </Stack>
+        )}
 
-        {/* 5) Confirm */}
-        <Dialog
-          open={confirmOpen}
-          onClose={() => setConfirmOpen(false)}
-        >
-          <DialogTitle>
-            Confirm Your Appointment
-          </DialogTitle>
+        {/* Confirmation */}
+        <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+          <DialogTitle>Confirm Your Appointment</DialogTitle>
           <DialogContent dividers>
             <Stack spacing={1}>
               <Typography>
-                <strong>Client:</strong> {user.firstName}{" "}
-                {user.lastName}
+                <strong>Client:</strong> {user.firstName} {user.lastName}
               </Typography>
               <Typography>
                 <strong>Type:</strong> {typeTitle}
               </Typography>
               <Typography>
-                <strong>Provider:</strong> {provName}
+                <strong>Provider:</strong> {confirmProvName}
               </Typography>
               <Typography>
                 <strong>Date & Time:</strong>{" "}
-                {selectedDate?.format("YYYY-MM-DD")} @
+                {selectedDate?.format("YYYY-MM-DD")} @{" "}
                 {selectedSlot?.start}
               </Typography>
             </Stack>
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setConfirmOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="contained"
-              onClick={onConfirm}
-            >
+            <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            <Button variant="contained" onClick={onConfirm}>
               Book Now
             </Button>
           </DialogActions>

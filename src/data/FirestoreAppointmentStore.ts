@@ -46,21 +46,24 @@ export class FirestoreAppointmentStore implements AppointmentStore {
 
   async save(appointment: Appointment): Promise<void> {
     const now = Timestamp.now();
+    // Build payload with singular serviceLocationId
     const payload: Partial<Appointment> & { updatedAt: any; createdAt?: any } = {
-      clientId:           appointment.clientId,
-      serviceProviderId:  appointment.serviceProviderId,
-      appointmentTypeId:  appointment.appointmentTypeId,
-      date:               appointment.date,
-      time:               appointment.time,
-      serviceLocationIds: appointment.serviceLocationIds || [],
-      updatedAt:          now,
+      clientId:          appointment.clientId,
+      serviceProviderId: appointment.serviceProviderId,
+      appointmentTypeId: appointment.appointmentTypeId,
+      date:              appointment.date,
+      time:              appointment.time,
+      serviceLocationId: appointment.serviceLocationId,  // <-- singular
+      updatedAt:         now,
     };
     if (!appointment.id) {
       payload.createdAt = now;
     }
+
     const ref = appointment.id
       ? doc(this.db, APPOINTMENTS_COLLECTION, appointment.id)
       : doc(this.coll);
+
     console.log("▶️ [Store] writing appointment payload:", payload);
     await setDoc(ref, payload, { merge: true });
   }
