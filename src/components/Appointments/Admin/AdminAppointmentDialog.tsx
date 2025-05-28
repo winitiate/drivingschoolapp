@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+// src/components/Appointments/Admin/AdminAppointmentDialog.tsx
+import React, { useEffect, useState } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -6,17 +7,17 @@ import {
   DialogActions,
   Button,
   Box,
-  TextField,
-} from '@mui/material';
-import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { v4 as uuidv4 } from 'uuid';
+} from "@mui/material";
+import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { v4 as uuidv4 } from "uuid";
+import { differenceInMinutes, addMinutes } from "date-fns";
 
-import AppointmentTypeField from './AppointmentTypeField';
-import ClientField from './ClientField';
-import ProviderField from './ProviderField';
-import type { Appointment } from '../../../models/Appointment';
+import AppointmentTypeField from "./AppointmentTypeField";
+import ClientField from "./ClientField";
+import ProviderField from "./ProviderField";
+import type { Appointment } from "../../../models/Appointment";
 
 export interface AdminAppointmentDialogProps {
   open: boolean;
@@ -27,7 +28,7 @@ export interface AdminAppointmentDialogProps {
   onDelete?: (appt: Appointment) => Promise<void>;
   clients: { id: string; label: string }[];
   providers: { id: string; label: string }[];
-  types: { id: string; label: string }[];
+  types: { id: string; label: string; durationMinutes?: number }[];
 }
 
 export default function AdminAppointmentDialog({
@@ -43,50 +44,50 @@ export default function AdminAppointmentDialog({
 }: AdminAppointmentDialogProps) {
   const isEdit = Boolean(initialData?.id);
 
-  const [appointmentTypeId, setAppointmentTypeId] = useState('');
-  const [clientId, setClientId] = useState('');
-  const [providerId, setProviderId] = useState('');
-  const [dateTime, setDateTime] = useState<Date | null>(new Date());
+  /* ───────── form state ───────── */
+  const [appointmentTypeId, setAppointmentTypeId] = useState("");
+  const [clientIds, setClientIds] = useState<string[]>([]);
+  const [providerIds, setProviderIds] = useState<string[]>([]);
+  const [startDT, setStartDT] = useState<Date | null>(new Date());
+  const [endDT, setEndDT] = useState<Date | null>(addMinutes(new Date(), 60));
   const [saving, setSaving] = useState(false);
 
-  // Reset when opened or initialData changes
+  /* ───────── reset on open / initialData ───────── */
   useEffect(() => {
     if (initialData) {
       setAppointmentTypeId(initialData.appointmentTypeId);
-      setClientId(initialData.clientId);
-      setProviderId(initialData.serviceProviderId);
-      if (initialData.date && initialData.time) {
-        setDateTime(new Date(`${initialData.date}T${initialData.time}`));
-      }
+      setClientIds(initialData.clientIds ?? []);
+      setProviderIds(initialData.serviceProviderIds ?? []);
+      setStartDT(initialData.startTime ? new Date(initialData.startTime) : new Date());
+      setEndDT(initialData.endTime ? new Date(initialData.endTime) : addMinutes(new Date(), 60));
     } else {
-      setAppointmentTypeId(types[0]?.id || '');
-      setClientId(clients[0]?.id || '');
-      setProviderId(providers[0]?.id || '');
-      setDateTime(new Date());
+      setAppointmentTypeId(types[0]?.id || "");
+      setClientIds(clients[0] ? [clients[0].id] : []);
+      setProviderIds(providers[0] ? [providers[0].id] : []);
+      const now = new Date();
+      setStartDT(now);
+      setEndDT(addMinutes(now, 60));
     }
-  }, [open, initialData, types, clients, providers]);
+  }, [open, initialData, clients, providers, types]);
 
+  /* ───────── handlers ───────── */
   const handleSave = async () => {
-    if (!dateTime) return;
+    if (!startDT || !endDT) return;
     setSaving(true);
 
-    const dt = dateTime;
-    const YYYY = dt.getFullYear();
-    const MM = String(dt.getMonth() + 1).padStart(2, '0');
-    const DD = String(dt.getDate()).padStart(2, '0');
-    const hh = String(dt.getHours()).padStart(2, '0');
-    const mm = String(dt.getMinutes()).padStart(2, '0');
+    const duration = differenceInMinutes(endDT, startDT);
 
     const appt: Appointment = {
       id: initialData?.id || uuidv4(),
       appointmentTypeId,
-      clientId,
-      serviceProviderId: providerId,
-      date: `${YYYY}-${MM}-${DD}`,
-      time: `${hh}:${mm}`,
-      serviceLocationIds: Array.from(
-        new Set([...(initialData?.serviceLocationIds || []), serviceLocationId])
-      ),
+      clientIds,
+      serviceProviderIds: providerIds,
+      serviceLocationId,
+      startTime: startDT,
+      endTime: endDT,
+      durationMinutes: duration,
+      status: initialData?.status || "scheduled",
+      notes: initialData?.notes || "",
     };
 
     await onSave(appt);
@@ -96,16 +97,17 @@ export default function AdminAppointmentDialog({
 
   const handleDelete = async () => {
     if (initialData && onDelete) {
+      setSaving(true);
       await onDelete(initialData);
+      setSaving(false);
       onClose();
     }
   };
 
+  /* ───────── render ───────── */
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>
-        {isEdit ? 'Edit Appointment' : 'New Appointment'}
-      </DialogTitle>
+      <DialogTitle>{isEdit ? "Edit Appointment" : "New Appointment"}</DialogTitle>
 
       <DialogContent dividers>
         <Box display="flex" flexDirection="column" gap={2}>
@@ -117,47 +119,55 @@ export default function AdminAppointmentDialog({
           />
 
           <ClientField
-            value={clientId}
-            onChange={setClientId}
+            multiple
+            value={clientIds}
+            onChange={setClientIds}
             options={clients}
             disabled={saving}
           />
 
           <ProviderField
-            value={providerId}
-            onChange={setProviderId}
+            multiple
+            value={providerIds}
+            onChange={setProviderIds}
             options={providers}
             disabled={saving}
           />
 
           <LocalizationProvider dateAdapter={AdapterDateFns}>
             <DateTimePicker
-              label="Date & Time"
-              value={dateTime}
-              onChange={setDateTime}
-              renderInput={params => <TextField {...params} fullWidth />}
+              label="Start Time"
+              value={startDT}
+              onChange={(d) => {
+                setStartDT(d);
+                if (d && endDT && d >= endDT)
+                  setEndDT(addMinutes(d, 60));
+              }}
+              disabled={saving}
+            />
+            <DateTimePicker
+              label="End Time"
+              value={endDT}
+              minDateTime={startDT || undefined}
+              onChange={setEndDT}
               disabled={saving}
             />
           </LocalizationProvider>
         </Box>
       </DialogContent>
 
-      <DialogActions sx={{ justifyContent: 'space-between', p: 2 }}>
+      <DialogActions sx={{ justifyContent: "space-between", p: 2 }}>
         {isEdit && onDelete && (
           <Button color="error" onClick={handleDelete} disabled={saving}>
-            Cancel Appointment
+            Delete
           </Button>
         )}
 
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box display="flex" gap={1}>
           <Button onClick={onClose} disabled={saving}>
             Close
           </Button>
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            disabled={saving}
-          >
+          <Button variant="contained" onClick={handleSave} disabled={saving}>
             Save
           </Button>
         </Box>

@@ -1,37 +1,49 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 // src/pages/ServiceProvider/ServiceProviderAppointments.tsx
-
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Box,
   Typography,
   CircularProgress,
   Alert,
   Button,
-} from '@mui/material';
+} from "@mui/material";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  deleteDoc,
+} from "firebase/firestore";
 
-import AppointmentsTable from '../../components/Appointments/AppointmentsTable';
-import AppointmentFormDialog, { Option } from '../../components/Appointments/AppointmentFormDialog';
+import AppointmentsTable from "../../components/Appointments/AppointmentsTable";
+import AppointmentFormDialog, {
+  Option,
+} from "../../components/Appointments/AppointmentFormDialog";
 
-import { FirestoreAppointmentStore } from '../../data/FirestoreAppointmentStore';
-import { FirestoreClientStore } from '../../data/FirestoreClientStore';
-import { FirestoreAppointmentTypeStore } from '../../data/FirestoreAppointmentTypeStore';
-import { FirestoreServiceProviderStore } from '../../data/FirestoreServiceProviderStore';
+import { FirestoreAppointmentStore } from "../../data/FirestoreAppointmentStore";
+import { FirestoreClientStore } from "../../data/FirestoreClientStore";
+import { FirestoreAppointmentTypeStore } from "../../data/FirestoreAppointmentTypeStore";
+import { FirestoreServiceProviderStore } from "../../data/FirestoreServiceProviderStore";
 
-import type { Appointment } from '../../models/Appointment';
-import { getFirestore, doc, getDoc, deleteDoc } from 'firebase/firestore';
+import type { Appointment } from "../../models/Appointment";
 
 export default function ServiceProviderAppointments() {
-  const { serviceProviderId } = useParams<{ serviceProviderId: string }>();
+  const { serviceProviderId } =
+    useParams<{ serviceProviderId: string }>();
   const navigate = useNavigate();
-  const db = useMemo(() => getFirestore(), []);
 
+  const db = useMemo(() => getFirestore(), []);
   const apptStore = useMemo(() => new FirestoreAppointmentStore(), []);
   const clientStore = useMemo(() => new FirestoreClientStore(), []);
   const typeStore = useMemo(() => new FirestoreAppointmentTypeStore(), []);
-  const providerStore = useMemo(() => new FirestoreServiceProviderStore(), []);
+  const providerStore = useMemo(
+    () => new FirestoreServiceProviderStore(),
+    []
+  );
 
-  const [providerName, setProviderName] = useState('Service Provider');
+  /* ───────── state ───────── */
+  const [providerName, setProviderName] = useState("Service Provider");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Option[]>([]);
   const [types, setTypes] = useState<Option[]>([]);
@@ -41,118 +53,148 @@ export default function ServiceProviderAppointments() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Appointment | null>(null);
 
-  // 1) Load the service-provider’s display name
+  /* ───────── 1. provider name ───────── */
   useEffect(() => {
     if (!serviceProviderId) return;
-    providerStore
-      .getById(serviceProviderId)
-      .then((prov) =>
-        prov
-          ? getDoc(doc(db, 'users', prov.userId)).then((snap) => {
-              if (snap.exists()) {
-                const d = snap.data() as any;
-                const full = [d.firstName, d.lastName].filter(Boolean).join(' ');
-                if (full) setProviderName(full);
-              }
-            })
-          : Promise.resolve()
-      )
-      .catch(() => {});
-  }, [serviceProviderId, providerStore, db]);
+    (async () => {
+      const prov = await providerStore.getById(serviceProviderId);
+      if (!prov) return;
+      const snap = await getDoc(doc(db, "users", prov.userId));
+      if (snap.exists()) {
+        const u = snap.data() as any;
+        setProviderName(
+          [u.firstName, u.lastName].filter(Boolean).join(" ") ||
+            "Service Provider"
+        );
+      }
+    })();
+  }, [serviceProviderId]);
 
-  // 2) Reload appointments + build client/type maps
+  /* ───────── 2. load / enrich appointments ───────── */
   const reload = useCallback(async () => {
     if (!serviceProviderId) return;
+
     setLoading(true);
     setError(null);
 
     try {
-      // fetch all appointments, filter to this provider
-      const all = await apptStore.listAll();
-      const mine = all.filter(a => a.serviceProviderId === serviceProviderId);
+      // A) appointments for this provider
+      const mine = await apptStore.listByServiceProvider(serviceProviderId);
 
-      // --- CLIENTS: unique clientId list from appointments ---
-      const clientIds = Array.from(new Set(mine.map(a => a.clientId)));
+      // B) unique client IDs (UIDs or Client doc IDs)
+      const uniqClientIds = Array.from(
+        new Set(mine.flatMap((a) => a.clientIds ?? []))
+      );
 
       const clientOpts: Option[] = await Promise.all(
-        clientIds.map(async id => {
-          // try your clientStore first
-          const cEnt = await clientStore.getById(id);
+        uniqClientIds.map(async (cid) => {
+          // 1️⃣ try a Client doc
+          const cEnt = await clientStore.getById(cid);
           if (cEnt) {
-            // found a client document → lookup the linked `users/{userId}`
-            const snap = await getDoc(doc(db, 'users', cEnt.userId));
-            const d = snap.exists() ? (snap.data() as any) : {};
-            const label = [d.firstName, d.lastName].filter(Boolean).join(' ');
-            return { id, label: label || 'Unnamed Client' };
-          } else {
-            // fallback: treat `id` as a direct users/{id}
-            const snap = await getDoc(doc(db, 'users', id));
+            const snap = await getDoc(doc(db, "users", cEnt.userId));
             if (snap.exists()) {
               const d = snap.data() as any;
-              const label = [d.firstName, d.lastName].filter(Boolean).join(' ');
-              return { id, label: label || 'Unnamed Client' };
+              return {
+                id: cid,
+                label:
+                  [d.firstName, d.lastName].filter(Boolean).join(" ") ||
+                  "Unnamed Client",
+              };
             }
-            return { id, label: 'Unknown Client' };
           }
+
+          // 2️⃣ fall back to treating `cid` as a UID in users/{cid}
+          const snap = await getDoc(doc(db, "users", cid));
+          if (snap.exists()) {
+            const d = snap.data() as any;
+            return {
+              id: cid,
+              label:
+                [d.firstName, d.lastName].filter(Boolean).join(" ") ||
+                "Unnamed Client",
+            };
+          }
+
+          return { id: cid, label: "Unknown Client" };
         })
       );
-      const clientNameMap = Object.fromEntries(clientOpts.map(c => [c.id, c.label]));
+      const clientMap = Object.fromEntries(
+        clientOpts.map((c) => [c.id, c.label])
+      );
 
-      // --- TYPES: fetch all for these service locations (your existing logic) ---
-      const locIds = Array.from(new Set(mine.flatMap(a => a.serviceLocationIds || [])));
-      const typeLists = await Promise.all(locIds.map(loc => typeStore.listByServiceLocation(loc)));
-      const typeMap = new Map<string, { id: string; title: string }>();
-      typeLists.flat().forEach(t => {
-        if (t.id && !typeMap.has(t.id)) typeMap.set(t.id, t);
+      // C) appointment-type map
+      const locIds = Array.from(new Set(mine.map((a) => a.serviceLocationId)));
+      const typeLists = await Promise.all(
+        locIds.map((loc) => typeStore.listByServiceLocation(loc))
+      );
+      const typeMap = new Map<string, string>();
+      typeLists.flat().forEach((t) => {
+        if (t.id) typeMap.set(t.id, t.title);
       });
-      const typeOpts: Option[] = Array.from(typeMap.values()).map(t => ({
-        id: t.id!,
-        label: t.title,
-      }));
+      setTypes(
+        Array.from(typeMap.entries()).map(([id, title]) => ({
+          id,
+          label: title,
+        }))
+      );
 
-      // --- Enrich appointments for your table ---
-      const enriched = mine.map(a => ({
+      // D) enrich rows
+      const enriched = mine.map((a) => ({
         ...a,
-        clientName: clientNameMap[a.clientId] || 'Unknown Client',
+        clientName: (a.clientIds ?? [])
+          .map((id) => clientMap[id] || "Unknown Client")
+          .join(", "),
         serviceProviderName: providerName,
+        appointmentTypeName: typeMap.get(a.appointmentTypeId) || "",
       }));
 
       setAppointments(enriched);
       setClients(clientOpts);
-      setTypes(typeOpts);
     } catch (e: any) {
-      setError(e.message || 'Failed to load appointments');
+      setError(e.message || "Failed to load appointments");
     } finally {
       setLoading(false);
     }
-  }, [serviceProviderId, apptStore, clientStore, typeStore, providerStore, db, providerName]);
+  }, [serviceProviderId, providerName]);
 
   useEffect(() => {
     reload();
   }, [reload]);
 
-  // 3) Handlers: save, delete, then reload
-  const handleSave = async (appt: Appointment) => {
-    await apptStore.save(appt);
+  /* ───────── 3. save / delete ───────── */
+  const handleSave = async (a: Appointment) => {
+    await apptStore.save(a);
     setDialogOpen(false);
     setEditing(null);
-    await reload();
-  };
-  const handleDelete = async (appt: Appointment) => {
-    await deleteDoc(doc(db, 'appointments', appt.id!));
-    setDialogOpen(false);
-    setEditing(null);
-    await reload();
+    reload();
   };
 
-  // 4) Render
+  const handleDelete = async (a: Appointment) => {
+    await deleteDoc(doc(db, "appointments", a.id!));
+    setDialogOpen(false);
+    setEditing(null);
+    reload();
+  };
+
+  /* ───────── 4. render ───────── */
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+      <Box
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        mb={2}
+      >
         <Typography variant="h5">
           {providerName}’s Appointments
         </Typography>
-        <Button variant="contained" onClick={() => { setEditing(null); setDialogOpen(true); }}>
+        <Button
+          variant="contained"
+          onClick={() => {
+            setEditing(null);
+            setDialogOpen(true);
+          }}
+        >
           New Appointment
         </Button>
       </Box>
@@ -170,16 +212,21 @@ export default function ServiceProviderAppointments() {
           appointments={appointments}
           loading={false}
           error={null}
-          onEdit={a => { setEditing(a); setDialogOpen(true); }}
-          onAssess={a =>
-            navigate(`/service-provider/${serviceProviderId}/appointments/${a.id}/assess`)
+          onEdit={(a) => {
+            setEditing(a);
+            setDialogOpen(true);
+          }}
+          onAssess={(a) =>
+            navigate(
+              `/service-provider/${serviceProviderId}/appointments/${a.id}/assess`
+            )
           }
         />
       )}
 
       <AppointmentFormDialog
         open={dialogOpen}
-        serviceLocationId={appointments[0]?.serviceLocationIds?.[0] || ''}
+        serviceLocationId={appointments[0]?.serviceLocationId || ""}
         initialData={editing || undefined}
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
@@ -187,7 +234,7 @@ export default function ServiceProviderAppointments() {
         clients={clients}
         serviceProviders={[{ id: serviceProviderId!, label: providerName }]}
         appointmentTypes={types}
-        canEditClient={false}
+        canEditClient={true}
         canEditProvider={false}
         canCancel={Boolean(editing)}
       />
