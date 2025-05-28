@@ -41,53 +41,48 @@ export default function BookingPage() {
   const { id: locId } = useParams<{ id: string }>();
   const { user } = useAuth();
 
-  // 1) Must be signed in
+  /* ---------- 1  auth / location guard ---------- */
   if (!user) return <Navigate to="/sign-in" replace />;
-  // 2) Must belong to this location
   if (!locId || !user.clientLocationIds?.includes(locId)) {
     return <Navigate to="/" replace />;
   }
 
-  const db = useMemo(() => getFirestore(), []);
-  const apptStore = useMemo(() => new FirestoreAppointmentStore(), []);
-  const typeStore = useMemo(() => new FirestoreAppointmentTypeStore(), []);
-  const providerStore = useMemo(() => new FirestoreServiceProviderStore(), []);
-  const availabilityStore = useMemo(() => new FirestoreAvailabilityStore(), []);
+  const db                 = useMemo(() => getFirestore(), []);
+  const apptStore          = useMemo(() => new FirestoreAppointmentStore(), []);
+  const typeStore          = useMemo(() => new FirestoreAppointmentTypeStore(), []);
+  const providerStore      = useMemo(() => new FirestoreServiceProviderStore(), []);
+  const availabilityStore  = useMemo(() => new FirestoreAvailabilityStore(), []);
 
-  // dropdown state
+  /* ---------- dropdown data ---------- */
   const [types, setTypes] = useState<{ id: string; title: string }[]>([]);
-  const [providers, setProviders] = useState<{ id: string; name: string }[]>(
-    []
-  );
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [providers, setProviders] = useState<
+    { id: string; name: string; maxSimultaneousClients: number }[]
+  >([]);
 
-  // user picks
-  const [selectedType, setSelectedType] = useState<string>("");
-  const [selectedProvider, setSelectedProvider] = useState<string>("any");
+  /* ---------- ui state ---------- */
+  const [loading, setLoading]                   = useState(true);
+  const [error, setError]                       = useState<string | null>(null);
+  const [selectedType, setSelectedType]         = useState("");
+  const [selectedProvider, setSelectedProvider] = useState("any");
 
-  // availabilities
+  /* ---------- data ---------- */
   const [availabilities, setAvailabilities] = useState<Availability[]>([]);
-  const [availLoading, setAvailLoading] = useState(false);
+  const [availLoading, setAvailLoading]     = useState(false);
+  const [existingAppointments, setExistingAppointments] = useState<Appointment[]>([]);
 
-  // calendar + slots
+  /* ---------- calendar ---------- */
   const next30 = useMemo(
     () => Array.from({ length: 30 }, (_, i) => dayjs().add(i, "day")),
     []
   );
   const [availableDates, setAvailableDates] = useState<Dayjs[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Dayjs | null>(null);
-  const [slots, setSlots] = useState<DailySlot[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<DailySlot | null>(null);
+  const [selectedDate, setSelectedDate]     = useState<Dayjs | null>(null);
+  const [slots, setSlots]                   = useState<DailySlot[]>([]);
+  const [selectedSlot, setSelectedSlot]     = useState<DailySlot | null>(null);
+  const [selectedSlotProviderId, setSelectedSlotProviderId] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen]       = useState(false);
 
-  // <-- which provider actually owns the clicked slot -->
-  const [selectedSlotProviderId, setSelectedSlotProviderId] = useState<
-    string | null
-  >(null);
-
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  // 3) Load types & providers
+  /* ---------- 2  load types & providers ---------- */
   useEffect(() => {
     setLoading(true);
     Promise.all([
@@ -98,12 +93,12 @@ export default function BookingPage() {
         const provs = await Promise.all(
           provList.map(async (p) => {
             const snap = await getDoc(doc(db, "users", p.userId));
-            const d = snap.exists() ? (snap.data() as any) : {};
-            return {
-              id: p.id!,
-              name: `${d.firstName || ""} ${d.lastName || ""}`.trim() ||
-                "Unknown",
-            };
+            const u = snap.exists() ? (snap.data() as any) : {};
+            const name =
+              `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Unknown";
+            const ent  = await providerStore.getById(p.id!);
+            const cap  = ent?.maxSimultaneousClients ?? Infinity;
+            return { id: p.id!, name, maxSimultaneousClients: cap };
           })
         );
         setProviders(provs);
@@ -111,18 +106,41 @@ export default function BookingPage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [locId]);
+  }, [locId, db, providerStore, typeStore]);
 
-  // 3a) Auto‐select if only one type
   useEffect(() => {
     if (types.length === 1) setSelectedType(types[0].id);
   }, [types]);
 
-  // 4) Load availability when provider changes
+  /* ---------- 3  load appointments for selected day ---------- */
+  useEffect(() => {
+    if (!selectedDate || providers.length === 0) {
+      setExistingAppointments([]);
+      return;
+    }
+    (async () => {
+      const iso = selectedDate.format("YYYY-MM-DD");
+      let appts: Appointment[] = [];
+      if (selectedProvider === "any") {
+        const lists = await Promise.all(
+          providers.map((p) => apptStore.listByServiceProvider(p.id))
+        );
+        appts = lists.flat();
+      } else {
+        appts = await apptStore.listByServiceProvider(selectedProvider);
+      }
+      setExistingAppointments(
+        appts.filter(
+          (a) => a.serviceLocationId === locId && a.date === iso && a.time != null
+        )
+      );
+    })();
+  }, [selectedProvider, providers, selectedDate, locId, apptStore]);
+
+  /* ---------- 4  load availabilities ---------- */
   useEffect(() => {
     if (!selectedProvider) return;
     setAvailLoading(true);
-
     const loader =
       selectedProvider === "any"
         ? availabilityStore
@@ -131,14 +149,13 @@ export default function BookingPage() {
         : availabilityStore
             .getByScope("provider", selectedProvider)
             .then((a) => (a ? [a] : []));
-
     loader
-      .then((arr) => setAvailabilities(arr))
+      .then(setAvailabilities)
       .catch(console.error)
       .finally(() => setAvailLoading(false));
-  }, [selectedProvider]);
+  }, [selectedProvider, availabilityStore]);
 
-  // 5) Compute which next 30 days have slots
+  /* ---------- 5  compute dates with availability ---------- */
   useEffect(() => {
     if (availLoading) return;
     const good = next30.filter((d) => {
@@ -150,20 +167,19 @@ export default function BookingPage() {
       );
     });
     setAvailableDates(good);
-  }, [availabilities, availLoading]);
+  }, [availabilities, availLoading, next30]);
 
-  // 6) Reset & auto-pick first date + slots
+  /* ---------- 6  reset when picker changes ---------- */
   useEffect(() => {
     setSelectedDate(null);
     setSlots([]);
     setSelectedSlot(null);
     setSelectedSlotProviderId(null);
-
     if (
       selectedType &&
       selectedProvider &&
       !availLoading &&
-      availableDates.length > 0
+      availableDates.length
     ) {
       const first = availableDates[0];
       setSelectedDate(first);
@@ -171,81 +187,127 @@ export default function BookingPage() {
     }
   }, [selectedType, selectedProvider, availLoading, availableDates]);
 
-  // 7) Gather slots for chosen day
+  /* ---------- 7  build & filter slots ---------- */
   const loadSlots = useCallback(
     (d: Dayjs | null) => {
       if (!d) {
         setSlots([]);
         return;
       }
-      const wd = d.day();
-      let all: DailySlot[] = [];
+      const iso = d.format("YYYY-MM-DD");
+      const wd  = d.day();
+
+      type ProvSlot = { slot: DailySlot; providerId: string };
+      const provSlots: ProvSlot[] = [];
       availabilities.forEach((a) => {
         const sch = a.weekly.find((w) => w.weekday === wd);
-        if (sch) all = all.concat(sch.slots);
+        if (!sch) return;
+        sch.slots.forEach((s) =>
+          provSlots.push({ slot: s, providerId: a.scopeId })
+        );
       });
+
       const uniq = Array.from(
-        new Map(all.map((s) => [`${s.start}-${s.end}`, s])).values()
+        new Map(
+          provSlots.map((ps) => [`${ps.slot.start}-${ps.slot.end}`, ps.slot])
+        ).values()
       ).sort((a, b) => a.start.localeCompare(b.start));
-      setSlots(uniq);
+
+      const overlaps = (a: Appointment, s: DailySlot) => {
+        const aStart = dayjs(`${iso}T${a.time}`);
+        const len    = a.durationMinutes ?? 90;          // <-- fallback
+        const aEnd   = aStart.add(len, "minute");
+        const sStart = dayjs(`${iso}T${s.start}`);
+        const sEnd   = dayjs(`${iso}T${s.end}`);
+        return aStart.isBefore(sEnd) && aEnd.isAfter(sStart);
+      };
+
+      const filtered = uniq.filter((slot) => {
+        if (selectedProvider !== "any") {
+          const prov  = providers.find((p) => p.id === selectedProvider)!;
+          const avail = availabilities.find((a) => a.scopeId === prov.id);
+          const cap   = avail?.maxConcurrent ?? prov.maxSimultaneousClients;
+          const used  = existingAppointments.filter(
+            (a) => a.serviceProviderId === prov.id && overlaps(a, slot)
+          ).length;
+          return used < cap;
+        }
+        // “Any” provider
+        return providers.some((p) => {
+          const offers = provSlots.some(
+            (ps) => ps.providerId === p.id && ps.slot.start === slot.start
+          );
+          if (!offers) return false;
+          const avail = availabilities.find((a) => a.scopeId === p.id);
+          const cap   = avail?.maxConcurrent ?? p.maxSimultaneousClients;
+          const used  = existingAppointments.filter(
+            (a) => a.serviceProviderId === p.id && overlaps(a, slot)
+          ).length;
+          return used < cap;
+        });
+      });
+
+      setSlots(filtered);
     },
-    [availabilities]
+    [availabilities, providers, existingAppointments, selectedProvider]
   );
 
-  // 8a) Date picker
+  useEffect(() => {
+    if (selectedDate) loadSlots(selectedDate);
+  }, [selectedDate, existingAppointments, loadSlots]);
+
+  /* ---------- 8  handlers ---------- */
   const onDateChange = (d: Dayjs | null) => {
     setSelectedDate(d);
     loadSlots(d);
   };
 
-  // 8b) Slot click — also detect provider for “Any”
   const onSlotClick = (s: DailySlot) => {
-    let providerId: string | null = null;
-    if (selectedProvider !== "any") {
-      providerId = selectedProvider;
-    } else if (selectedDate) {
-      // find availability doc whose weekly slots include this exact slot
-      const avail = availabilities.find((a) =>
-        a.weekly
-          .find((w) => w.weekday === selectedDate.day())
-          ?.slots.some((sl) => sl.start === s.start && sl.end === s.end)
-      );
-      providerId = (avail as any)?.scopeId ?? avail?.id ?? null;
-    }
+    const pickProviderForAny = (): string | null => {
+      if (!selectedDate) return null;
+      const wd = selectedDate.day();
+      for (const a of availabilities) {
+        const sch = a.weekly.find((w) => w.weekday === wd);
+        if (!sch) continue;
+        if (sch.slots.some((sl) => sl.start === s.start && sl.end === s.end)) {
+          return a.scopeId;
+        }
+      }
+      return null;
+    };
+
+    const pid =
+      selectedProvider !== "any" ? selectedProvider : pickProviderForAny();
 
     setSelectedSlot(s);
-    setSelectedSlotProviderId(providerId);
+    setSelectedSlotProviderId(pid);
     setConfirmOpen(true);
   };
 
-  // 8c) Confirm & save — now including date/time strings
   const onConfirm = async () => {
     if (!selectedDate || !selectedSlot) return;
-
-    const dateStr = selectedDate.format("YYYY-MM-DD");
-    const timeStr = selectedSlot.start;
-    const durationMinutes = dayjs(selectedSlot.end, "HH:mm").diff(
+    const dateStr  = selectedDate.format("YYYY-MM-DD");
+    const duration = dayjs(selectedSlot.end, "HH:mm").diff(
       dayjs(selectedSlot.start, "HH:mm"),
       "minute"
     );
-
     const payload: Appointment = {
-      clientId: user.uid,
+      clientId:          user.uid,
       serviceProviderId: selectedSlotProviderId ?? "",
       serviceLocationId: locId,
       appointmentTypeId: selectedType,
-      date: dateStr,                 // <-- required now
-      time: timeStr,                 // <-- required now
-      durationMinutes,
-      status: "scheduled",
-      notes: "",
+      date:              dateStr,
+      time:              selectedSlot.start,
+      durationMinutes:   duration,
+      status:            "scheduled",
+      notes:             "",
     };
-
     await apptStore.save(payload);
+    setSelectedDate(dayjs(dateStr));     // refresh list
     setConfirmOpen(false);
   };
 
-  // 9) Loading / error
+  /* ---------- 9  render ---------- */
   if (loading)
     return (
       <Box textAlign="center" mt={4}>
@@ -255,13 +317,14 @@ export default function BookingPage() {
   if (error) return <Alert severity="error">{error}</Alert>;
 
   const typeTitle = types.find((t) => t.id === selectedType)?.title || "";
-  const provName =
+  const provName  =
     selectedProvider === "any"
       ? "(Any)"
       : providers.find((p) => p.id === selectedProvider)?.name || "";
-  const confirmProvName = selectedSlotProviderId
-    ? providers.find((p) => p.id === selectedSlotProviderId)?.name || ""
-    : provName;
+  const confirmProvName =
+    selectedSlotProviderId
+      ? providers.find((p) => p.id === selectedSlotProviderId)?.name || ""
+      : provName;
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -295,9 +358,7 @@ export default function BookingPage() {
             <InputLabel>Service Provider</InputLabel>
             <Select
               value={selectedProvider}
-              onChange={(e) =>
-                setSelectedProvider(e.target.value as string)
-              }
+              onChange={(e) => setSelectedProvider(e.target.value as string)}
               label="Service Provider"
             >
               <MenuItem value="any">(Any)</MenuItem>
@@ -323,9 +384,7 @@ export default function BookingPage() {
               }
               slots={{
                 day: (props) => {
-                  const ok = availableDates.some((d) =>
-                    d.isSame(props.day, "day")
-                  );
+                  const ok = availableDates.some((d) => d.isSame(props.day, "day"));
                   return (
                     <PickersDay
                       {...props}
@@ -347,9 +406,7 @@ export default function BookingPage() {
         {/* Time slots */}
         {selectedDate && selectedType && selectedProvider && (
           <Stack spacing={1} sx={{ mb: 3 }}>
-            <Typography variant="subtitle1">
-              Available Time Slots
-            </Typography>
+            <Typography variant="subtitle1">Available Time Slots</Typography>
             {slots.length > 0 ? (
               slots.map((s) => (
                 <Button
@@ -384,8 +441,7 @@ export default function BookingPage() {
               </Typography>
               <Typography>
                 <strong>Date & Time:</strong>{" "}
-                {selectedDate?.format("YYYY-MM-DD")} @{" "}
-                {selectedSlot?.start}
+                {selectedDate?.format("YYYY-MM-DD")} @ {selectedSlot?.start}
               </Typography>
             </Stack>
           </DialogContent>

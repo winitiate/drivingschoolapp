@@ -183,11 +183,20 @@ export default function AvailabilityFormDialog({
 
   // save
   const handleSave = () => {
+    // sanitize weekly: ensure each entry has weekday + slots only
+    const sanitizedWeekly: DailySchedule[] = weekly.map(ws => ({
+      weekday: ws.weekday,
+      slots: ws.slots.map(s => ({
+        start: s.start,
+        end: s.end,
+      })),
+    }))
+
     const out: Availability = {
       id: initialData?.id,
       scope,
       scopeId,
-      weekly,
+      weekly: sanitizedWeekly,
       blocked: blocked.map(blk => {
         const fmt = blk.allDay ? 'YYYY-MM-DD' : 'YYYY-MM-DDTHH:mm'
         return `${blk.start.format(fmt)}_${blk.end.format(fmt)}`
@@ -206,7 +215,7 @@ export default function AvailabilityFormDialog({
       <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
         <DialogTitle>Edit Availability</DialogTitle>
         <DialogContent dividers>
-          {/* Max concurrent */}
+          {/* Max simultaneous */}
           <Box mb={3}>
             <Typography fontWeight="bold" gutterBottom>
               Max simultaneous clients
@@ -303,7 +312,7 @@ export default function AvailabilityFormDialog({
             )
           })}
 
-          {/* blocked */}
+          {/* blocked periods */}
           <Box mb={3}>
             <Typography fontWeight="bold" gutterBottom>
               Blocked Periods
@@ -374,7 +383,7 @@ export default function AvailabilityFormDialog({
             </Button>
           </Box>
 
-          {/* max/day */}
+          {/* max per day */}
           <Box mb={2}>
             <Typography fontWeight="bold" gutterBottom>
               Max Appointments Per Day
