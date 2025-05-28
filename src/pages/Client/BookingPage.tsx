@@ -1,6 +1,5 @@
 // src/pages/Client/BookingPage.tsx
-// – Adds dynamic removal of a day from `availableDates` when every slot on
-//   that day reaches capacity, so the day is no longer rendered in green.
+// (capacity-aware dates + auto-jump to first day with availability)
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, Navigate } from "react-router-dom";
@@ -43,35 +42,37 @@ export default function BookingPage() {
   const { id: locId } = useParams<{ id: string }>();
   const { user } = useAuth();
 
-  /* ---------- 1  guards ---------- */
+  /* ---------- guards ---------- */
   if (!user) return <Navigate to="/sign-in" replace />;
-  if (!locId || !user.clientLocationIds?.includes(locId)) {
+  if (!locId || !user.clientLocationIds?.includes(locId))
     return <Navigate to="/" replace />;
-  }
 
-  /* ---------- 2  stores ---------- */
+  /* ---------- stores ---------- */
   const db                = useMemo(() => getFirestore(), []);
   const apptStore         = useMemo(() => new FirestoreAppointmentStore(), []);
   const typeStore         = useMemo(() => new FirestoreAppointmentTypeStore(), []);
   const providerStore     = useMemo(() => new FirestoreServiceProviderStore(), []);
   const availabilityStore = useMemo(() => new FirestoreAvailabilityStore(), []);
 
-  /* ---------- 3  dropdown & ui state ---------- */
+  /* ---------- dropdown state ---------- */
   const [types, setTypes] = useState<{ id: string; title: string }[]>([]);
   const [providers, setProviders] = useState<
     { id: string; name: string; maxSimultaneousClients: number }[]
   >([]);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
   const [selectedType, setSelectedType]         = useState("");
   const [selectedProvider, setSelectedProvider] = useState("any");
 
-  /* ---------- 4  availability & appts ---------- */
+  /* ---------- availability / appts ---------- */
   const [availabilities, setAvailabilities] = useState<Availability[]>([]);
   const [availLoading, setAvailLoading]     = useState(false);
-  const [existingAppointments, setExistingAppointments] = useState<Appointment[]>([]);
 
-  /* ---------- 5  calendar ---------- */
+  // 30-day appointment cache {dateISO -> Appointment[]}
+  const [apptsByDate, setApptsByDate] = useState<Map<string, Appointment[]>>(new Map());
+  const [existingAppointments, setExistingAppointments] = useState<Appointment[]>([]); // selected day
+
+  /* ---------- calendar ---------- */
   const next30 = useMemo(
     () => Array.from({ length: 30 }, (_, i) => dayjs().add(i, "day")),
     []
@@ -80,11 +81,10 @@ export default function BookingPage() {
   const [selectedDate, setSelectedDate]     = useState<Dayjs | null>(null);
   const [slots, setSlots]                   = useState<DailySlot[]>([]);
   const [selectedSlot, setSelectedSlot]     = useState<DailySlot | null>(null);
-  const [selectedSlotProviderId, setSelectedSlotProviderId] =
-    useState<string | null>(null);
+  const [selectedSlotProviderId, setSelectedSlotProviderId] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen]       = useState(false);
 
-  /* ---------- 6  load types & providers ---------- */
+  /* ---------- 1: load types & providers ---------- */
   useEffect(() => {
     setLoading(true);
     Promise.all([
@@ -99,8 +99,11 @@ export default function BookingPage() {
             const name =
               `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Unknown";
             const ent  = await providerStore.getById(p.id!);
-            const cap  = ent?.maxSimultaneousClients ?? Infinity;
-            return { id: p.id!, name, maxSimultaneousClients: cap };
+            return {
+              id: p.id!,
+              name,
+              maxSimultaneousClients: ent?.maxSimultaneousClients ?? Infinity,
+            };
           })
         );
         setProviders(provs);
@@ -114,14 +117,11 @@ export default function BookingPage() {
     if (types.length === 1) setSelectedType(types[0].id);
   }, [types]);
 
-  /* ---------- 7  existing appts (selected day) ---------- */
+  /* ---------- 2: preload 30-day appointments cache ---------- */
   useEffect(() => {
-    if (!selectedDate || providers.length === 0) {
-      setExistingAppointments([]);
-      return;
-    }
+    if (providers.length === 0) return;
+
     (async () => {
-      const iso = selectedDate.format("YYYY-MM-DD");
       let appts: Appointment[] = [];
       if (selectedProvider === "any") {
         const lists = await Promise.all(
@@ -131,15 +131,23 @@ export default function BookingPage() {
       } else {
         appts = await apptStore.listByServiceProvider(selectedProvider);
       }
-      setExistingAppointments(
-        appts.filter(
-          (a) => a.serviceLocationId === locId && a.date === iso && a.time
-        )
+      const filtered = appts.filter(
+        (a) =>
+          a.serviceLocationId === locId &&
+          a.date &&
+          next30.some((d) => d.format("YYYY-MM-DD") === a.date)
       );
+      const map = new Map<string, Appointment[]>();
+      filtered.forEach((a) => {
+        const list = map.get(a.date!) ?? [];
+        list.push(a);
+        map.set(a.date!, list);
+      });
+      setApptsByDate(map);
     })();
-  }, [selectedProvider, providers, selectedDate, locId, apptStore]);
+  }, [providers, selectedProvider, apptStore, locId, next30]);
 
-  /* ---------- 8  load availabilities for provider(s) ---------- */
+  /* ---------- 3: load availabilities ---------- */
   useEffect(() => {
     if (!selectedProvider) return;
     setAvailLoading(true);
@@ -157,40 +165,99 @@ export default function BookingPage() {
       .finally(() => setAvailLoading(false));
   }, [selectedProvider, availabilityStore]);
 
-  /* ---------- 9  compute availableDates ---------- */
+  /* ---------- helpers ---------- */
+  const overlaps = (a: Appointment, s: DailySlot, iso: string) => {
+    const aStart = dayjs(`${iso}T${a.time}`);
+    const len    = a.durationMinutes ?? 90;
+    const aEnd   = aStart.add(len, "minute");
+    const sStart = dayjs(`${iso}T${s.start}`);
+    const sEnd   = dayjs(`${iso}T${s.end}`);
+    return aStart.isBefore(sEnd) && aEnd.isAfter(sStart);
+  };
+
+  const providerHasRoom = (
+    pid: string,
+    slot: DailySlot,
+    iso: string,
+    cap: number
+  ): boolean => {
+    const appts = apptsByDate.get(iso) ?? [];
+    const used  = appts.filter(
+      (a) => a.serviceProviderId === pid && overlaps(a, slot, iso)
+    ).length;
+    return used < cap;
+  };
+
+  /* ---------- 4: compute availableDates (capacity-aware) ---------- */
   useEffect(() => {
     if (availLoading) return;
+
     const good = next30.filter((d) => {
       if (d.isBefore(dayjs(), "day")) return false;
       const iso = d.format("YYYY-MM-DD");
-      if (availabilities.some((a) => a.blocked.includes(iso))) return false;
-      return availabilities.some((a) =>
-        a.weekly.some((w) => w.weekday === d.day() && w.slots.length > 0)
+
+      const combos: { slot: DailySlot; providerId: string; cap: number }[] = [];
+      availabilities.forEach((a) => {
+        const sch = a.weekly.find((w) => w.weekday === d.day());
+        if (!sch) return;
+        const cap =
+          a.maxConcurrent ??
+          providers.find((p) => p.id === a.scopeId)?.maxSimultaneousClients ??
+          Infinity;
+        sch.slots.forEach((s) =>
+          combos.push({ slot: s, providerId: a.scopeId, cap })
+        );
+      });
+      if (combos.length === 0) return false;
+
+      if (selectedProvider !== "any") {
+        const rel = combos.filter((x) => x.providerId === selectedProvider);
+        return rel.some(({ slot, cap }) =>
+          providerHasRoom(selectedProvider, slot, iso, cap)
+        );
+      }
+      return combos.some(({ providerId, slot, cap }) =>
+        providerHasRoom(providerId, slot, iso, cap)
       );
     });
+
     setAvailableDates(good);
-  }, [availabilities, availLoading, next30]);
-
-  /* ---------- 10  reset when picker combo changes ---------- */
-  useEffect(() => {
-    setSelectedDate(null);
-    setSlots([]);
-    setSelectedSlot(null);
-    setSelectedSlotProviderId(null);
-    if (
-      selectedType &&
-      selectedProvider &&
-      !availLoading &&
-      availableDates.length
-    ) {
-      const first = availableDates[0];
-      setSelectedDate(first);
-      loadSlots(first);
+    if (selectedDate && !good.some((x) => x.isSame(selectedDate, "day"))) {
+      setSelectedDate(null);
+      setSlots([]);
     }
-  }, [selectedType, selectedProvider, availLoading, availableDates]);
+  }, [
+    availabilities,
+    providers,
+    availLoading,
+    next30,
+    apptsByDate,
+    selectedProvider,
+    selectedDate,
+  ]);
 
-  /* ---------- 11  build + capacity-filter slots ---------- */
-  const loadSlots = useCallback(
+  /* ---------- 5: auto-select first available date ---------- */
+  const firstAvail = availableDates[0] ?? null;
+
+  useEffect(() => {
+    if (!selectedDate && firstAvail) {
+      setSelectedDate(firstAvail);
+      buildSlots(firstAvail);
+    }
+  }, [firstAvail, selectedDate]); // buildSlots stable via useCallback
+
+  /* ---------- 6: existingAppointments for selected date ---------- */
+  useEffect(() => {
+    if (!selectedDate) {
+      setExistingAppointments([]);
+      return;
+    }
+    const iso = selectedDate.format("YYYY-MM-DD");
+    setExistingAppointments(apptsByDate.get(iso) ?? []);
+  }, [selectedDate, apptsByDate]);
+
+  /* ---------- 7: build slots ---------- */
+  const buildSlots = useCallback(
     (d: Dayjs | null) => {
       if (!d) {
         setSlots([]);
@@ -199,105 +266,74 @@ export default function BookingPage() {
       const iso = d.format("YYYY-MM-DD");
       const wd  = d.day();
 
-      type ProvSlot = { slot: DailySlot; providerId: string };
-      const provSlots: ProvSlot[] = [];
+      type Combo = { slot: DailySlot; providerId: string; cap: number };
+      const combos: Combo[] = [];
       availabilities.forEach((a) => {
         const sch = a.weekly.find((w) => w.weekday === wd);
         if (!sch) return;
+        const cap =
+          a.maxConcurrent ??
+          providers.find((p) => p.id === a.scopeId)?.maxSimultaneousClients ??
+          Infinity;
         sch.slots.forEach((s) =>
-          provSlots.push({ slot: s, providerId: a.scopeId })
+          combos.push({ slot: s, providerId: a.scopeId, cap })
         );
       });
 
       const uniq = Array.from(
-        new Map(
-          provSlots.map((ps) => [`${ps.slot.start}-${ps.slot.end}`, ps.slot])
-        ).values()
+        new Map(combos.map((c) => [`${c.slot.start}-${c.slot.end}`, c.slot])).values()
       ).sort((a, b) => a.start.localeCompare(b.start));
-
-      const overlaps = (a: Appointment, s: DailySlot) => {
-        const aStart = dayjs(`${iso}T${a.time}`);
-        const len    = a.durationMinutes ?? 90;        // <-- fallback
-        const aEnd   = aStart.add(len, "minute");
-        const sStart = dayjs(`${iso}T${s.start}`);
-        const sEnd   = dayjs(`${iso}T${s.end}`);
-        return aStart.isBefore(sEnd) && aEnd.isAfter(sStart);
-      };
 
       const filtered = uniq.filter((slot) => {
         if (selectedProvider !== "any") {
-          const prov  = providers.find((p) => p.id === selectedProvider)!;
-          const avail = availabilities.find((a) => a.scopeId === prov.id);
-          const cap   = avail?.maxConcurrent ?? prov.maxSimultaneousClients;
-          const used  = existingAppointments.filter(
-            (a) => a.serviceProviderId === prov.id && overlaps(a, slot)
-          ).length;
-          return used < cap;
+          const prov = providers.find((p) => p.id === selectedProvider)!;
+          const cap  =
+            availabilities.find((a) => a.scopeId === prov.id)?.maxConcurrent ??
+            prov.maxSimultaneousClients;
+          return providerHasRoom(prov.id, slot, iso, cap);
         }
         return providers.some((p) => {
-          const offers = provSlots.some(
-            (ps) => ps.providerId === p.id && ps.slot.start === slot.start
+          const offers = combos.some(
+            (c) => c.providerId === p.id && c.slot.start === slot.start
           );
           if (!offers) return false;
-          const avail = availabilities.find((a) => a.scopeId === p.id);
-          const cap   = avail?.maxConcurrent ?? p.maxSimultaneousClients;
-          const used  = existingAppointments.filter(
-            (a) => a.serviceProviderId === p.id && overlaps(a, slot)
-          ).length;
-          return used < cap;
+          const cap =
+            availabilities.find((a) => a.scopeId === p.id)?.maxConcurrent ??
+            p.maxSimultaneousClients;
+          return providerHasRoom(p.id, slot, iso, cap);
         });
       });
 
       setSlots(filtered);
-
-      /* --- NEW: if every slot is full, remove day from availableDates --- */
-      if (
-        filtered.length === 0 &&
-        availableDates.some((x) => x.isSame(d, "day"))
-      ) {
-        setAvailableDates((prev) => prev.filter((x) => !x.isSame(d, "day")));
-        if (selectedDate?.isSame(d, "day")) {
-          setSelectedDate(null);
-        }
-      }
     },
-    [
-      availabilities,
-      providers,
-      existingAppointments,
-      selectedProvider,
-      availableDates,
-      selectedDate,
-    ]
+    [availabilities, providers, apptsByDate, selectedProvider]
   );
 
   useEffect(() => {
-    if (selectedDate) loadSlots(selectedDate);
-  }, [selectedDate, existingAppointments, loadSlots]);
+    buildSlots(selectedDate);
+  }, [selectedDate, existingAppointments, buildSlots]);
 
-  /* ---------- 12  handlers ---------- */
+  /* ---------- 8: handlers ---------- */
   const onDateChange = (d: Dayjs | null) => {
     setSelectedDate(d);
-    loadSlots(d);
+    buildSlots(d);
+  };
+
+  const pickProviderForAny = (s: DailySlot): string | null => {
+    if (!selectedDate) return null;
+    const wd = selectedDate.day();
+    for (const a of availabilities) {
+      const sch = a.weekly.find((w) => w.weekday === wd);
+      if (!sch) continue;
+      if (sch.slots.some((sl) => sl.start === s.start && sl.end === s.end))
+        return a.scopeId;
+    }
+    return null;
   };
 
   const onSlotClick = (s: DailySlot) => {
-    const pickProviderForAny = (): string | null => {
-      if (!selectedDate) return null;
-      const wd = selectedDate.day();
-      for (const a of availabilities) {
-        const sch = a.weekly.find((w) => w.weekday === wd);
-        if (!sch) continue;
-        if (sch.slots.some((sl) => sl.start === s.start && sl.end === s.end)) {
-          return a.scopeId;
-        }
-      }
-      return null;
-    };
-
     const pid =
-      selectedProvider !== "any" ? selectedProvider : pickProviderForAny();
-
+      selectedProvider !== "any" ? selectedProvider : pickProviderForAny(s);
     setSelectedSlot(s);
     setSelectedSlotProviderId(pid);
     setConfirmOpen(true);
@@ -305,7 +341,7 @@ export default function BookingPage() {
 
   const onConfirm = async () => {
     if (!selectedDate || !selectedSlot) return;
-    const dateStr  = selectedDate.format("YYYY-MM-DD");
+    const iso = selectedDate.format("YYYY-MM-DD");
     const duration = dayjs(selectedSlot.end, "HH:mm").diff(
       dayjs(selectedSlot.start, "HH:mm"),
       "minute"
@@ -315,19 +351,22 @@ export default function BookingPage() {
       serviceProviderId: selectedSlotProviderId ?? "",
       serviceLocationId: locId,
       appointmentTypeId: selectedType,
-      date:              dateStr,
+      date:              iso,
       time:              selectedSlot.start,
       durationMinutes:   duration,
       status:            "scheduled",
       notes:             "",
     };
     await apptStore.save(payload);
-    // reload same date so slots/capacity refresh
-    setSelectedDate(dayjs(dateStr));
+    // update local cache so UI refreshes immediately
+    setApptsByDate((prev) => {
+      const list = prev.get(iso) ?? [];
+      return new Map(prev).set(iso, [...list, payload]);
+    });
     setConfirmOpen(false);
   };
 
-  /* ---------- 13  render ---------- */
+  /* ---------- 9: render ---------- */
   if (loading)
     return (
       <Box textAlign="center" mt={4}>
@@ -337,7 +376,7 @@ export default function BookingPage() {
   if (error) return <Alert severity="error">{error}</Alert>;
 
   const typeTitle = types.find((t) => t.id === selectedType)?.title || "";
-  const provName  =
+  const provName =
     selectedProvider === "any"
       ? "(Any)"
       : providers.find((p) => p.id === selectedProvider)?.name || "";
@@ -396,7 +435,7 @@ export default function BookingPage() {
           <Box sx={{ mb: 3 }}>
             <Typography variant="h6">Select a Date</Typography>
             <DateCalendar
-              value={selectedDate}
+              value={selectedDate ?? firstAvail}
               onChange={onDateChange}
               disablePast
               shouldDisableDate={(d) =>
@@ -404,7 +443,9 @@ export default function BookingPage() {
               }
               slots={{
                 day: (props) => {
-                  const ok = availableDates.some((d) => d.isSame(props.day, "day"));
+                  const ok = availableDates.some((d) =>
+                    d.isSame(props.day, "day")
+                  );
                   return (
                     <PickersDay
                       {...props}
