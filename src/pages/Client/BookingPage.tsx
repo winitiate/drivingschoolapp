@@ -1,5 +1,5 @@
 // src/pages/Client/BookingPage.tsx
-// (capacity-aware dates + auto-jump to first day with availability)
+// (adds full “Day, Month D YYYY Start–End” labels in the slot buttons)
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, Navigate } from "react-router-dom";
@@ -358,7 +358,6 @@ export default function BookingPage() {
       notes:             "",
     };
     await apptStore.save(payload);
-    // update local cache so UI refreshes immediately
     setApptsByDate((prev) => {
       const list = prev.get(iso) ?? [];
       return new Map(prev).set(iso, [...list, payload]);
@@ -469,15 +468,20 @@ export default function BookingPage() {
           <Stack spacing={1} sx={{ mb: 3 }}>
             <Typography variant="subtitle1">Available Time Slots</Typography>
             {slots.length > 0 ? (
-              slots.map((s) => (
-                <Button
-                  key={`${s.start}-${s.end}`}
-                  variant="outlined"
-                  onClick={() => onSlotClick(s)}
-                >
-                  {s.start} — {s.end}
-                </Button>
-              ))
+              slots.map((s) => {
+                const dateLabel = selectedDate.format("dddd, MMMM D, YYYY");
+                const startLabel = dayjs(s.start, "HH:mm").format("h:mmA");
+                const endLabel   = dayjs(s.end, "HH:mm").format("h:mmA");
+                return (
+                  <Button
+                    key={`${s.start}-${s.end}`}
+                    variant="outlined"
+                    onClick={() => onSlotClick(s)}
+                  >
+                    {`${dateLabel} ${startLabel} to ${endLabel}`}
+                  </Button>
+                );
+              })
             ) : (
               <Alert severity="info">No time slot available on this day.</Alert>
             )}
@@ -500,7 +504,8 @@ export default function BookingPage() {
               </Typography>
               <Typography>
                 <strong>Date & Time:</strong>{" "}
-                {selectedDate?.format("YYYY-MM-DD")} @ {selectedSlot?.start}
+                {selectedDate?.format("dddd, MMMM D, YYYY")}{" "}
+                {dayjs(selectedSlot?.start, "HH:mm").format("h:mmA")}
               </Typography>
             </Stack>
           </DialogContent>
