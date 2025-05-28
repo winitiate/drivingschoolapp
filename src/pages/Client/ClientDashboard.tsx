@@ -16,7 +16,6 @@ import {
 } from '@mui/material';
 
 import { useAuth } from '../../auth/useAuth';
-
 import AppointmentsTable from '../../components/Appointments/AppointmentsTable';
 import AppointmentFormDialog from '../../components/Appointments/AppointmentFormDialog';
 
@@ -34,40 +33,31 @@ export default function ClientDashboard() {
   const { user, loading: authLoading } = useAuth();
   const db = useMemo(() => getFirestore(), []);
 
-  // Firestore stores
   const apptStore = useMemo(() => new FirestoreAppointmentStore(), []);
   const providerStore = useMemo(() => new FirestoreServiceProviderStore(), []);
   const typeStore = useMemo(() => new FirestoreAppointmentTypeStore(), []);
 
-  // Loading & error state
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [enrichedAppointments, setEnrichedAppointments] = useState<any[]>([]);
+  const [provList, setProvList] = useState<any[]>([]);
+  const [provMap, setProvMap] = useState<Record<string, string>>({});
+  const [typeList, setTypeList] = useState<any[]>([]);
 
-  // Enriched appointment list
-  type Enriched = Appointment & {
-    clientName: string;
-    serviceProviderName: string;
-    appointmentTypeName: string;
-  };
-  const [appointments, setAppointments] = useState<Enriched[]>([]);
-
-  // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing]       = useState<Appointment | null>(null);
+  const [editing, setEditing] = useState<Appointment | null>(null);
 
-  // Fetch & enrich
   const loadAppointments = useCallback(async () => {
     if (!user?.uid || !locId) return;
     setLoading(true);
     setError(null);
 
     try {
-      // 1) load all and filter to this client+location
       const all = await apptStore.listAll();
       const mine = all.filter(
         a =>
           a.clientId === user.uid &&
-          // support both array or singular field
           (
             Array.isArray(a.serviceLocationIds)
               ? a.serviceLocationIds.includes(locId)
@@ -75,45 +65,45 @@ export default function ClientDashboard() {
           )
       );
 
-      // 2) build provider name map
-      const provList = await providerStore.listByServiceLocation(locId);
-      const provMap: Record<string,string> = {};
+      const providers = await providerStore.listByServiceLocation(locId);
+      const pMap: Record<string, string> = {};
       await Promise.all(
-        provList.map(async p => {
+        providers.map(async p => {
           const snap = await getDoc(doc(db, 'users', p.userId));
           const d = snap.exists() ? (snap.data() as any) : {};
-          provMap[p.id!] = [d.firstName, d.lastName].filter(Boolean).join(' ') || 'Unknown Provider';
+          pMap[p.id!] = [d.firstName, d.lastName].filter(Boolean).join(' ') || 'Unknown Provider';
         })
       );
 
-      // 3) build type map
-      const typeList = await typeStore.listByServiceLocation(locId);
-      const typeMap: Record<string,string> = {};
-      typeList.forEach(t => {
-        if (t.id) typeMap[t.id] = t.title;
+      const types = await typeStore.listByServiceLocation(locId);
+      const tMap: Record<string, string> = {};
+      types.forEach(t => {
+        if (t.id) tMap[t.id] = t.title;
       });
 
-      // 4) stitch it all together
-      const enriched: Enriched[] = mine.map(a => ({
+      const enriched = mine.map(a => ({
         ...a,
         clientName: `${user.firstName} ${user.lastName}`,
-        serviceProviderName: provMap[a.serviceProviderId] || '(Any)',
-        appointmentTypeName: typeMap[a.appointmentTypeId] || '',
+        serviceProviderName: pMap[a.serviceProviderId] || '(Any)',
+        appointmentTypeName: tMap[a.appointmentTypeId] || '',
       }));
 
-      setAppointments(enriched);
+      setAppointments(mine);
+      setEnrichedAppointments(enriched);
+      setProvList(providers);
+      setProvMap(pMap);
+      setTypeList(types);
     } catch (e: any) {
       setError(e.message || 'Failed to load appointments');
     } finally {
       setLoading(false);
     }
-  }, [user, locId]);
+  }, [user, locId, db, apptStore, providerStore, typeStore]);
 
   useEffect(() => {
     loadAppointments();
   }, [loadAppointments]);
 
-  // Dialog handlers
   const handleEdit = useCallback((appt: Appointment) => {
     setEditing(appt);
     setDialogOpen(true);
@@ -137,7 +127,6 @@ export default function ClientDashboard() {
     [loadAppointments]
   );
 
-  // auth & param guards
   if (authLoading) {
     return (
       <Box textAlign="center" mt={8}>
@@ -163,7 +152,7 @@ export default function ClientDashboard() {
       )}
 
       <AppointmentsTable
-        appointments={appointments}
+        appointments={enrichedAppointments}
         loading={loading}
         error={error}
         onEdit={handleEdit}
