@@ -1,15 +1,7 @@
 // src/pages/ServiceLocation/Settings/SquareUpSettings/SquareUpSettings.tsx
 
-/**
- * SquareUpSettings.tsx
- *
- * Admin interface for configuring SquareUp credentials for a specific
- * service location. Loads existing values via the ServiceLocationStore
- * abstraction and saves updates back through the same interface.
- */
-
-import React, { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from "react";
+import { useParams } from "react-router-dom";
 import {
   Box,
   Typography,
@@ -17,40 +9,37 @@ import {
   Button,
   CircularProgress,
   Alert,
-} from '@mui/material';
+} from "@mui/material";
 
-import { ServiceLocation } from '../../../../models/ServiceLocation';
-import { ServiceLocationStore } from '../../../../data/ServiceLocationStore';
-import { FirestoreServiceLocationStore } from '../../../../data/FirestoreServiceLocationStore';
+import { PaymentCredential } from "../../../../models/PaymentCredential";
+import { PaymentCredentialStore } from "../../../../data/PaymentCredentialStore";
+import { FirestorePaymentCredentialStore } from "../../../../data/FirestorePaymentCredentialStore";
 
 export default function SquareUpSettings() {
   const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
 
-  // Use the abstraction rather than Firestore directly
-  const store: ServiceLocationStore = useMemo(
-    () => new FirestoreServiceLocationStore(),
+  const store: PaymentCredentialStore = useMemo(
+    () => new FirestorePaymentCredentialStore(),
     []
   );
 
-  const [location, setLocation] = useState<ServiceLocation | null>(null);
-  const [appId, setAppId] = useState('');
-  const [accessToken, setAccessToken] = useState('');
+  const [credential, setCredential] = useState<PaymentCredential | null>(null);
+  const [appId, setAppId] = useState("");
+  const [accessToken, setAccessToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load existing settings on mount / id change
   useEffect(() => {
     if (!serviceLocationId) return;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const loc = await store.getById(serviceLocationId);
-        if (!loc) throw new Error('Service location not found');
-        setLocation(loc);
-        setAppId(loc.squareApplicationId || '');
-        setAccessToken(loc.squareAccessToken || '');
+        const cred = await store.getByOwner("square", "serviceLocation", serviceLocationId);
+        setCredential(cred);
+        setAppId(cred?.credentials?.applicationId || "");
+        setAccessToken(cred?.credentials?.accessToken || "");
       } catch (e: any) {
         setError(e.message);
       } finally {
@@ -59,19 +48,24 @@ export default function SquareUpSettings() {
     })();
   }, [serviceLocationId, store]);
 
-  // Save updates via the abstraction
   const handleSave = async () => {
-    if (!location) return;
+    if (!serviceLocationId) return;
     setSaving(true);
     setError(null);
     try {
-      const updated: ServiceLocation = {
-        ...location,
-        squareApplicationId: appId,
-        squareAccessToken: accessToken,
+      const updated: PaymentCredential = {
+        id: credential?.id,
+        provider: "square",
+        ownerType: "serviceLocation",
+        ownerId: serviceLocationId,
+        credentials: {
+          applicationId: appId,
+          accessToken,
+        },
+        createdAt: credential?.createdAt,
       };
       await store.save(updated);
-      setLocation(updated);
+      setCredential(updated);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -104,7 +98,7 @@ export default function SquareUpSettings() {
         fullWidth
         margin="normal"
         value={appId}
-        onChange={e => setAppId(e.target.value)}
+        onChange={(e) => setAppId(e.target.value)}
       />
 
       <TextField
@@ -112,16 +106,12 @@ export default function SquareUpSettings() {
         fullWidth
         margin="normal"
         value={accessToken}
-        onChange={e => setAccessToken(e.target.value)}
+        onChange={(e) => setAccessToken(e.target.value)}
       />
 
       <Box mt={2}>
-        <Button
-          variant="contained"
-          onClick={handleSave}
-          disabled={saving}
-        >
-          {saving ? 'Saving…' : 'Save SquareUp Settings'}
+        <Button variant="contained" onClick={handleSave} disabled={saving}>
+          {saving ? "Saving…" : "Save SquareUp Settings"}
         </Button>
       </Box>
     </Box>

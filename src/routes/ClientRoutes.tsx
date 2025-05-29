@@ -8,7 +8,7 @@ import ClientLayout         from '../layouts/ClientLayout';
 
 import ClientSelect       from '../pages/Client/ClientSelect';
 import ClientDashboard    from '../pages/Client/ClientDashboard';
-import BookingPage        from '../pages/Client/BookingPage';
+import BookingPage        from '../pages/Client/BookingPage/BookingPage';
 import ClientAppointments from '../pages/Client/ClientAppointments';
 import AppointmentDetail  from '../pages/Client/AppointmentDetail';
 
