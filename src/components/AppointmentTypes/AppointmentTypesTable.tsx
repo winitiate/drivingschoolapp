@@ -1,15 +1,13 @@
-// src/components/AppointmentTypes/AppointmentTypesTable.tsx
-
 /**
  * AppointmentTypesTable.tsx
  *
  * Presentational table component for listing appointment types.
  * Receives an array of AppointmentType objects and a callback to invoke when
- * the user clicks “Edit” on a row. Doesn’t perform any data fetching—
- * use the appointmentTypeStore abstraction in the parent to load/save data.
+ * the user clicks “Edit” on a row. Doesn’t perform any data fetching—use the
+ * AppointmentTypeStore abstraction in the parent to load/save data.
  */
 
-import React from 'react';
+import React from "react";
 import {
   Table,
   TableHead,
@@ -19,9 +17,9 @@ import {
   IconButton,
   Box,
   Typography,
-} from '@mui/material';
-import EditIcon from '@mui/icons-material/Edit';
-import { AppointmentType } from '../../models/AppointmentType';
+} from "@mui/material";
+import EditIcon from "@mui/icons-material/Edit";
+import { AppointmentType } from "../../models/AppointmentType";
 
 export interface AppointmentTypesTableProps {
   /** Array of appointment types to display */
@@ -42,6 +40,13 @@ export default function AppointmentTypesTable({
     );
   }
 
+  const fmtPrice = (cents?: number | null) =>
+    cents == null
+      ? "-"
+      : cents === 0
+      ? "Free"
+      : `$${(cents / 100).toFixed(2)}`;
+
   return (
     <Table>
       <TableHead>
@@ -49,7 +54,7 @@ export default function AppointmentTypesTable({
           <TableCell>Order</TableCell>
           <TableCell>Title</TableCell>
           <TableCell>Description</TableCell>
-          <TableCell>Duration (Minutes)</TableCell>
+          <TableCell>Duration&nbsp;(min)</TableCell>
           <TableCell>Price</TableCell>
           <TableCell align="center">Actions</TableCell>
         </TableRow>
@@ -59,17 +64,13 @@ export default function AppointmentTypesTable({
           <TableRow key={at.id}>
             <TableCell>{at.order ?? index + 1}</TableCell>
             <TableCell>{at.title}</TableCell>
-            <TableCell>{at.description || 'No description'}</TableCell>
+            <TableCell>{at.description || "—"}</TableCell>
             <TableCell>
-              {typeof at.durationMinutes === 'number' 
-                ? at.durationMinutes 
-                : '-'}
+              {typeof at.durationMinutes === "number"
+                ? at.durationMinutes
+                : "—"}
             </TableCell>
-            <TableCell>
-              {typeof at.price === 'number'
-                ? `$${at.price.toFixed(2)}`
-                : '-'}
-            </TableCell>
+            <TableCell>{fmtPrice(at.priceCents)}</TableCell>
             <TableCell align="center">
               <IconButton size="small" onClick={() => onEdit(at)}>
                 <EditIcon fontSize="small" />

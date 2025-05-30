@@ -1,0 +1,9 @@
+// open-everything (local dev / emulator only)
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

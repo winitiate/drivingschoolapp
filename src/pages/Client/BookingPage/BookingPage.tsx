@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+// ­Capacity-aware booking page with embedded Square payment when priceCents > 0
+
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useParams, Navigate } from "react-router-dom";
 import { useAuth } from "../../../auth/useAuth";
 
@@ -7,11 +9,11 @@ import {
   Typography,
   CircularProgress,
   Alert,
+  Dialog,
 } from "@mui/material";
 import { LocalizationProvider } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import dayjs from "dayjs";
-import type { Dayjs } from "dayjs";
+import dayjs, { Dayjs } from "dayjs";
 
 import { FirestoreAppointmentStore } from "../../../data/FirestoreAppointmentStore";
 import { FirestoreAppointmentTypeStore } from "../../../data/FirestoreAppointmentTypeStore";
@@ -26,13 +28,15 @@ import ProviderSelect           from "./components/ProviderSelect";
 import DateSelector             from "./components/DateSelector";
 import TimeSlots                from "./components/TimeSlots";
 import ConfirmAppointmentDialog from "./components/ConfirmAppointmentDialog";
+import SquarePayForm            from "./components/SquarePayForm";
 
-import { useTypesAndProviders }   from "../../../hooks/useTypesAndProviders";
-import { useAppointmentsMap }     from "../../../hooks/useAppointmentsMap";
-import { useAvailabilities }      from "../../../hooks/useAvailabilities";
-import {
-  buildSlots,
-} from "../../../utils/bookingUtils";
+import { useTypesAndProviders } from "../../../hooks/useTypesAndProviders";
+import { useAppointmentsMap }   from "../../../hooks/useAppointmentsMap";
+import { useAvailabilities }    from "../../../hooks/useAvailabilities";
+import { buildSlots }           from "../../../utils/bookingUtils";
+
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "../../../firebase";
 
 /* ───────────────────────────────────────────────────────────── */
 
@@ -44,35 +48,55 @@ export default function BookingPage() {
   if (!locId || !user.clientLocationIds?.includes(locId))
     return <Navigate to="/" replace />;
 
-  /* stores (memoised once) */
-  const apptStore     = useMemo(() => new FirestoreAppointmentStore(), []);
-  const typeStore     = useMemo(() => new FirestoreAppointmentTypeStore(), []);
-  const providerStore = useMemo(() => new FirestoreServiceProviderStore(), []);
+  /* ───────── stores ───────── */
+  const apptStore       = useMemo(() => new FirestoreAppointmentStore(), []);
+  const typeStore       = useMemo(() => new FirestoreAppointmentTypeStore(), []);
+  const providerStore   = useMemo(() => new FirestoreServiceProviderStore(), []);
   const availabilityStore = useMemo(() => new FirestoreAvailabilityStore(), []);
 
-  /* dropdown selections */
+  /* ───────── Square credentials ───────── */
+  const [squareAppId, setSquareAppId] = useState("");
+  const [squareLocId, setSquareLocId] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const q = query(
+        collection(db, "paymentCredentials"),
+        where("provider", "==", "square"),
+        where("ownerType", "==", "serviceLocation"),
+        where("ownerId", "==", locId)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const data = snap.docs[0].data() as any;
+        setSquareAppId(data.credentials.applicationId);
+        setSquareLocId(data.credentials.locationId ?? "");
+      }
+    })();
+  }, [locId]);
+
+  /* ───────── dropdown state ───────── */
   const [selectedType,     setSelectedType]     = useState("");
   const [selectedProvider, setSelectedProvider] = useState("any");
 
-  /* next 30-day range */
+  /* next-30-days */
   const next30 = useMemo(
     () => Array.from({ length: 30 }, (_, i) => dayjs().add(i, "day")),
     []
   );
 
-  /* fetch types + providers */
+  /* load types + providers */
   const { types, providers, loading: tpLoading, error } = useTypesAndProviders(
     locId,
     providerStore,
     typeStore
   );
 
-  /* auto-select if only one type */
   useEffect(() => {
     if (types.length === 1) setSelectedType(types[0].id);
   }, [types]);
 
-  /* map of appointments keyed by date */
+  /* appointments map */
   const apptsByDate = useAppointmentsMap(
     providers,
     selectedProvider,
@@ -81,31 +105,24 @@ export default function BookingPage() {
     next30
   );
 
-  /* availabilities for provider(s) */
+  /* availabilities */
   const { availabilities, loading: availLoading } = useAvailabilities(
     selectedProvider,
     availabilityStore
   );
 
-  /* calendar + slot state */
+  /* calendar state */
   const [availableDates, setAvailableDates] = useState<Dayjs[]>([]);
   const [selectedDate,   setSelectedDate]   = useState<Dayjs | null>(null);
   const [slots,          setSlots]          = useState<DailySlot[]>([]);
   const [existingAppointments, setExistingAppointments] = useState<Appointment[]>([]);
 
-  /* compute availableDates whenever deps change */
   useEffect(() => {
     if (availLoading) return;
 
     const good = next30.filter((d) => {
       if (d.isBefore(dayjs(), "day")) return false;
-      return buildSlots(
-        d,
-        availabilities,
-        providers,
-        apptsByDate,
-        selectedProvider
-      ).length > 0;
+      return buildSlots(d, availabilities, providers, apptsByDate, selectedProvider).length > 0;
     });
 
     setAvailableDates(good);
@@ -114,54 +131,28 @@ export default function BookingPage() {
       setSelectedDate(null);
       setSlots([]);
     }
-  }, [
-    availLoading,
-    availabilities,
-    providers,
-    apptsByDate,
-    selectedProvider,
-    selectedDate,
-    next30,
-  ]);
+  }, [availLoading, availabilities, providers, apptsByDate, selectedProvider, selectedDate, next30]);
 
-  /* first available date shortcut */
   const firstAvail = availableDates[0] ?? null;
 
-  /* build slots list whenever date or deps change */
   useEffect(() => {
-    setSlots(
-      buildSlots(
-        selectedDate,
-        availabilities,
-        providers,
-        apptsByDate,
-        selectedProvider
-      )
-    );
-  }, [
-    selectedDate,
-    availabilities,
-    providers,
-    apptsByDate,
-    selectedProvider,
-  ]);
+    setSlots(buildSlots(selectedDate, availabilities, providers, apptsByDate, selectedProvider));
+  }, [selectedDate, availabilities, providers, apptsByDate, selectedProvider]);
 
-  /* keep existing appointments of chosen day for UI */
   useEffect(() => {
-    if (!selectedDate) {
-      setExistingAppointments([]);
-      return;
-    }
+    if (!selectedDate) { setExistingAppointments([]); return; }
     const iso = selectedDate.format("YYYY-MM-DD");
     setExistingAppointments(apptsByDate.get(iso) ?? []);
   }, [selectedDate, apptsByDate]);
 
-  /* ───────── slot click / confirm logic ───────── */
-  const [selectedSlot,          setSelectedSlot]          = useState<DailySlot | null>(null);
+  /* ───────── slot / dialogs ───────── */
+  const [selectedSlot,           setSelectedSlot]           = useState<DailySlot | null>(null);
   const [selectedSlotProviderId, setSelectedSlotProviderId] = useState<string | null>(null);
-  const [confirmOpen,           setConfirmOpen]            = useState(false);
+  const [confirmOpen,            setConfirmOpen]            = useState(false);
 
-  /** Choose provider for “any” selection */
+  const [payOpen, setPayOpen]     = useState(false);
+  const [amountCents, setAmountCents] = useState(0);
+
   const pickProviderForAny = (slot: DailySlot): string | null => {
     if (!selectedDate) return null;
     const weekday = selectedDate.day();
@@ -175,16 +166,15 @@ export default function BookingPage() {
   };
 
   const onSlotClick = (slot: DailySlot) => {
-    const pid =
-      selectedProvider !== "any" ? selectedProvider : pickProviderForAny(slot);
+    const pid = selectedProvider !== "any" ? selectedProvider : pickProviderForAny(slot);
     setSelectedSlot(slot);
     setSelectedSlotProviderId(pid);
     setConfirmOpen(true);
   };
 
-  const onConfirm = async () => {
+  /* save appointment helper */
+  const saveAppointment = async () => {
     if (!selectedDate || !selectedSlot) return;
-
     const iso      = selectedDate.format("YYYY-MM-DD");
     const startDT  = dayjs(`${iso}T${selectedSlot.start}`);
     const endDT    = dayjs(`${iso}T${selectedSlot.end}`);
@@ -195,29 +185,54 @@ export default function BookingPage() {
       clientIds:          [user.uid],
       serviceProviderIds: [selectedSlotProviderId ?? ""],
       serviceLocationId:  locId,
-
       startTime:          startDT.toDate(),
       endTime:            endDT.toDate(),
       durationMinutes:    duration,
-
       status:             "scheduled",
       notes:              "",
     };
-
     await apptStore.save(payload);
+  };
+
+  /* confirm dialog handler */
+  const onConfirm = useCallback(async () => {
+    if (!selectedDate || !selectedSlot) return;
+
+    const typeMeta: any = await typeStore.getById(selectedType);
+    const cents: number = typeMeta?.priceCents ?? 0;
+
+    if (cents > 0) {
+      setAmountCents(cents);
+      setConfirmOpen(false);
+      setPayOpen(true);
+      return;
+    }
+
+    await saveAppointment();
     setConfirmOpen(false);
+  }, [selectedDate, selectedSlot, selectedType, typeStore]);
+
+  /* payment success */
+  const handlePaid = async () => {
+    await saveAppointment();
+    setPayOpen(false);
   };
 
   /* ───────── render ───────── */
-  if (tpLoading) return (
-    <Box textAlign="center" mt={4}><CircularProgress /></Box>
-  );
+  if (tpLoading)
+    return (
+      <Box textAlign="center" mt={4}>
+        <CircularProgress />
+      </Box>
+    );
   if (error) return <Alert severity="error">{error}</Alert>;
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box sx={{ p: 2, maxWidth: 600, mx: "auto" }}>
-        <Typography variant="h4" gutterBottom>Book an Appointment</Typography>
+        <Typography variant="h4" gutterBottom>
+          Book an Appointment
+        </Typography>
 
         <AppointmentTypeSelect
           types={types}
@@ -238,7 +253,7 @@ export default function BookingPage() {
             availableDates={availableDates}
             firstAvail={firstAvail}
             value={selectedDate}
-            onChange={(d)=>{ setSelectedDate(d); }}
+            onChange={setSelectedDate}
           />
         )}
 
@@ -250,21 +265,51 @@ export default function BookingPage() {
           />
         )}
 
+        {/* Summary */}
         <ConfirmAppointmentDialog
           open={confirmOpen}
-          onClose={()=>setConfirmOpen(false)}
+          onClose={() => setConfirmOpen(false)}
           onConfirm={onConfirm}
           clientName={`${user.firstName} ${user.lastName}`}
-          typeTitle={types.find(t=>t.id===selectedType)?.title || ""}
+          typeTitle={types.find((t) => t.id === selectedType)?.title || ""}
           providerName={
             selectedSlotProviderId
-              ? providers.find(p=>p.id===selectedSlotProviderId)?.name || ""
-              : selectedProvider==="any" ? "(Any)" :
-                providers.find(p=>p.id===selectedProvider)?.name || ""
+              ? providers.find((p) => p.id === selectedSlotProviderId)?.name || ""
+              : selectedProvider === "any"
+              ? "(Any)"
+              : providers.find((p) => p.id === selectedProvider)?.name || ""
           }
           selectedDate={selectedDate}
           selectedSlot={selectedSlot}
+          amountCents={amountCents}
         />
+
+        {/* Square payment */}
+        <Dialog
+          open={payOpen}
+          onClose={() => setPayOpen(false)}
+          maxWidth="sm"
+          fullWidth
+          keepMounted={false}   // unmounts dialog each close to avoid duplicate card iframes
+        >
+          <Box sx={{ p: 3 }}>
+            {squareAppId ? (
+              <SquarePayForm
+                applicationId={squareAppId}
+                locationId={squareLocId}
+                amountCents={amountCents}
+                appointmentTypeId={selectedType}
+                serviceLocationId={locId}
+                onSuccess={handlePaid}
+                onCancel={() => setPayOpen(false)}
+              />
+            ) : (
+              <Alert severity="error">
+                Square credentials not found for this location.
+              </Alert>
+            )}
+          </Box>
+        </Dialog>
       </Box>
     </LocalizationProvider>
   );

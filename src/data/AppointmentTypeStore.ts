@@ -1,36 +1,26 @@
-// src/data/AppointmentTypeStore.ts
-
 /**
  * AppointmentTypeStore.ts
  *
- * Defines the abstraction interface for “appointmentTypes” (formerly “appointmentTypes”):
- * discrete categories of appointments offered at a service location.
- * All methods return Promises so that implementations can be swapped out
- * (e.g. Firestore, REST API, in-memory mock) without changing calling code.
+ * Abstraction interface for “appointmentTypes”.
+ * Allows Firestore, REST, or mock implementations to be swapped
+ * without touching the calling code.
  */
 
 import { AppointmentType } from "../models/AppointmentType";
 
 export interface AppointmentTypeStore {
-  /**
-   * List every appointment type in the system.
-   * @returns Array of AppointmentType objects
-   */
+  /** Fetch a single AppointmentType by its document ID. */
+  getById(id: string): Promise<AppointmentType | null>;
+
+  /** List all appointment types in the system (admin only). */
   listAll(): Promise<AppointmentType[]>;
 
-  /**
-   * List appointment types offered at a specific service location.
-   * @param serviceLocationId  ID of the location or facility
-   * @returns                  Array of AppointmentType objects for that location
-   */
+  /** List appointment types offered at one service-location. */
   listByServiceLocation(serviceLocationId: string): Promise<AppointmentType[]>;
 
   /**
-   * Create or update an appointment type record.
-   * If `appointmentType.id` exists, that document is merged/overwritten;
-   * otherwise a new document is created.
-   * @param appointmentType  The AppointmentType data to persist
+   * Create / update an AppointmentType.
+   * If `appointmentType.id` exists it is merged, otherwise inserted.
    */
   save(appointmentType: AppointmentType): Promise<void>;
 }
-

@@ -1,75 +1,87 @@
-// src/data/FirestoreAppointmentTypeStore.ts
-
 import {
   collection,
-  query,
-  where,
+  doc,
+  getDoc,
   getDocs,
   addDoc,
-  doc,
   setDoc,
   deleteDoc,
-} from 'firebase/firestore';
-import { AppointmentTypeStore } from './AppointmentTypeStore';
-import { AppointmentType } from '../models/AppointmentType';
-import { db } from '../firebase';
+  query,
+  where,
+} from "firebase/firestore";
+import { AppointmentTypeStore } from "./AppointmentTypeStore";
+import { AppointmentType } from "../models/AppointmentType";
+import { db } from "../firebase";
 
 export class FirestoreAppointmentTypeStore implements AppointmentTypeStore {
-  private readonly colRef = collection(db, 'appointmentTypes');
+  private readonly colRef = collection(db, "appointmentTypes");
 
-  /** List all appointment types for a given service location, sorted by `order`. */
-  async listByServiceLocation(serviceLocationId: string): Promise<AppointmentType[]> {
-    const q = query(
-      this.colRef,
-      where('serviceLocationId', '==', serviceLocationId)
-    );
-    const snapshot = await getDocs(q);
-    const items = snapshot.docs.map(docSnap => {
-      const data = docSnap.data();
-      return {
-        id:                  docSnap.id,
-        serviceLocationId:   data.serviceLocationId,
-        title:               data.title,
-        description:         data.description,
-        durationMinutes:     data.durationMinutes ?? null,
-        price:               data.price ?? null,
-        order:               data.order ?? null,
-        assessmentTypeIds:   data.assessmentTypeIds ?? [],
-      } as AppointmentType;
-    });
-    // ensure correct order
-    return items.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  /* ──────────────────────────── helpers ─────────────────────────── */
+
+  /** Convert raw Firestore data to typed entity */
+  private toEntity(id: string, data: any): AppointmentType {
+    return {
+      id,
+      serviceLocationId: data.serviceLocationId,
+      title:             data.title,
+      description:       data.description ?? null,
+      durationMinutes:   data.durationMinutes ?? null,
+      priceCents:        data.priceCents ?? null,
+      order:             data.order ?? null,
+      assessmentTypeIds: data.assessmentTypeIds ?? [],
+    };
   }
 
-  /**
-   * Save or create an appointment type.
-   * Uses addDoc for new records (no ID), setDoc(...) for existing ones.
-   */
+  /* ─────────────────────────── interface ────────────────────────── */
+
+  /** Get a single appointment-type by ID */
+  async getById(id: string): Promise<AppointmentType | null> {
+    const snap = await getDoc(doc(db, "appointmentTypes", id));
+    return snap.exists() ? this.toEntity(snap.id, snap.data()) : null;
+  }
+
+  /** List *all* appointment types (rare, admin only) */
+  async listAll(): Promise<AppointmentType[]> {
+    const snap = await getDocs(this.colRef);
+    return snap.docs.map((d) => this.toEntity(d.id, d.data()));
+  }
+
+  /** List by service-location, sorted by `order` then title */
+  async listByServiceLocation(
+    serviceLocationId: string
+  ): Promise<AppointmentType[]> {
+    const q = query(this.colRef, where("serviceLocationId", "==", serviceLocationId));
+    const snap = await getDocs(q);
+
+    const items = snap.docs.map((d) => this.toEntity(d.id, d.data()));
+    return items.sort((a, b) =>
+      (a.order ?? 0) === (b.order ?? 0)
+        ? a.title.localeCompare(b.title)
+        : (a.order ?? 0) - (b.order ?? 0)
+    );
+  }
+
+  /** Save (create or update) */
   async save(item: AppointmentType): Promise<void> {
-    // Firestore rejects undefined, so normalize to null or empty array
     const payload = {
       serviceLocationId: item.serviceLocationId,
       title:             item.title,
-      description:       item.description,
+      description:       item.description ?? null,
       durationMinutes:   item.durationMinutes ?? null,
-      price:             item.price ?? null,
+      priceCents:        item.priceCents ?? null,
       order:             item.order ?? null,
       assessmentTypeIds: item.assessmentTypeIds ?? [],
     };
 
     if (item.id) {
-      // existing document (two-part path)
-      const ref = doc(db, 'appointmentTypes', item.id);
-      await setDoc(ref, payload, { merge: true });
+      await setDoc(doc(db, "appointmentTypes", item.id), payload, { merge: true });
     } else {
-      // new document
       await addDoc(this.colRef, payload);
     }
   }
 
-  /** Delete an appointment type by ID. */
+  /** Delete by ID (not part of interface but handy) */
   async delete(id: string): Promise<void> {
-    const ref = doc(db, 'appointmentTypes', id);
-    await deleteDoc(ref);
+    await deleteDoc(doc(db, "appointmentTypes", id));
   }
 }
