@@ -6,6 +6,7 @@
       equals the current :id param
     • Resolves client/provider names (with graceful fallback)
     • CRUD with <AdminAppointmentDialog>
+    • Refunds payments via the `cancelAppointment` Cloud Function
     ──────────────────────────────────────────────────────────────── */
 import React, {
   useState,
@@ -27,6 +28,10 @@ import {
   getDoc,
   deleteDoc,
 } from "firebase/firestore";
+import {
+  getFunctions,
+  httpsCallable,
+} from "firebase/functions";
 
 import AdminAppointmentDialog
   from "../../../components/Appointments/Admin/AdminAppointmentDialog";
@@ -48,6 +53,7 @@ export default function AppointmentsManager() {
 
   /* ───────── data stores ───────── */
   const db             = useMemo(() => getFirestore(), []);
+  const functions      = useMemo(() => getFunctions(), []);
   const apptStore      = useMemo(() => new FirestoreAppointmentStore(), []);
   const clientStore    = useMemo(() => new FirestoreClientStore(), []);
   const providerStore  = useMemo(() => new FirestoreServiceProviderStore(), []);
@@ -172,18 +178,47 @@ export default function AppointmentsManager() {
   const providerOpts = providersRaw;
   const typeOpts     = typesRaw;
 
-  /* ───────── save / delete ───────── */
+  /* ───────── save / delete / refund ───────── */
   const handleSave = async (a: Appointment) => {
     await apptStore.save(a);
     setDialogOpen(false);
     setEditing(null);
     reload();
   };
+
   const handleDelete = async (a: Appointment) => {
     await deleteDoc(doc(db, "appointments", a.id!));
     setDialogOpen(false);
     setEditing(null);
     reload();
+  };
+
+  const handleRefund = async (a: Appointment) => {
+    if (!a.paymentId) return;
+
+    try {
+      setLoading(true);
+      // Cloud Function: functions/src/payments/cancelAppointment.ts
+      const cancelAppt = httpsCallable<
+        { appointmentId: string; paymentId: string },
+        { success: boolean }
+      >(functions, "cancelAppointment");
+
+      await cancelAppt({ appointmentId: a.id!, paymentId: a.paymentId });
+
+      // Mark appointment as refunded/cancelled in Firestore
+      await apptStore.save({
+        ...a,
+        status: "refunded",
+      });
+    } catch (e: any) {
+      setError(e.message || "Refund failed");
+    } finally {
+      setLoading(false);
+      setDialogOpen(false);
+      setEditing(null);
+      reload();
+    }
   };
 
   /* ───────── render ───────── */
@@ -233,6 +268,7 @@ export default function AppointmentsManager() {
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
         onDelete={handleDelete}
+        onRefund={handleRefund}
         clients={clientOpts}
         providers={providerOpts}
         types={typeOpts}

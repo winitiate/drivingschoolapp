@@ -1,55 +1,78 @@
 // src/components/Auth/ProtectedClientRoute.tsx
-
-import React from 'react'
-import { Navigate, Outlet, useMatch } from 'react-router-dom'
-import { useAuth } from '../../auth/useAuth'
-import { Box, CircularProgress } from '@mui/material'
+import React from "react";
+import { Navigate, Outlet, useMatch } from "react-router-dom";
+import { Box, CircularProgress } from "@mui/material";
+import { useAuth } from "../../auth/useAuth";
 
 export default function ProtectedClientRoute() {
-  const { user, loading } = useAuth()
+  const { user, loading } = useAuth();
 
-  // Grab “id” only if the URL matches /client/:id/*
-  const match = useMatch('/client/:id/*')
-  const id = match?.params.id
+  // Match /client/:id/* (id may be undefined when you’re at /client)
+  const match = useMatch("/client/:id/*");
+  const id = match?.params.id;
 
-  // 1) While auth is initializing, show a spinner
+  /* ------------------------------------------------------------------ */
+  /* 1) Still waiting for Firebase auth → show spinner                  */
+  /* ------------------------------------------------------------------ */
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+      <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
         <CircularProgress />
       </Box>
-    )
+    );
   }
 
-  // 2) Must be signed in and have the “client” role
-  if (!user || !user.roles.includes('client')) {
-    return <Navigate to="/sign-in" replace />
+  /* ------------------------------------------------------------------ */
+  /* 2) Must be signed in *and* have the client role                    */
+  /* ------------------------------------------------------------------ */
+  if (!user || !user.roles?.includes("client")) {
+    console.info("ProtectedClientRoute → not signed in as client → /sign-in");
+    return <Navigate to="/sign-in" replace />;
   }
 
-  const clientIds = user.clientLocationIds || []
+  /* ------------------------------------------------------------------ */
+  /* 3) Build client-location list                                      */
+  /* ------------------------------------------------------------------ */
+  const clientIds: string[] =
+    // new field
+    user.clientIds ??
+    // legacy field kept for older accounts
+    user.clientLocationIds ??
+    [];
 
-  // 3) No “id” in the URL → choose:
+  /* ------------------------------------------------------------------ */
+  /* 4) No :id in the URL → decide where to send the user               */
+  /* ------------------------------------------------------------------ */
   if (!id) {
-    // 3a) zero locations → nowhere to go
     if (clientIds.length === 0) {
-      return <Navigate to="/" replace />
+      console.info("ProtectedClientRoute → user has 0 clientIds → /");
+      return <Navigate to="/" replace />;
     }
-    // 3b) exactly one → auto-forward
     if (clientIds.length === 1) {
-      return <Navigate to={`/client/${clientIds[0]}`} replace />
+      console.info(
+        "ProtectedClientRoute → single clientId → /client/" + clientIds[0]
+      );
+      return <Navigate to={`/client/${clientIds[0]}`} replace />;
     }
-    // 3c) multiple → show the selector
-    return <Outlet />
+    // Multiple locations → show selector page
+    return <Outlet />;
   }
 
-  // 4) “id” present → only allow if it’s in their list
+  /* ------------------------------------------------------------------ */
+  /* 5) :id present → allow only if it belongs to the user              */
+  /* ------------------------------------------------------------------ */
   if (clientIds.includes(id)) {
-    return <Outlet />
+    return <Outlet />;
   }
 
-  // 5) Invalid “id” → back to selector or home
+  /* ------------------------------------------------------------------ */
+  /* 6) Invalid :id → bounce back to selector (or home)                 */
+  /* ------------------------------------------------------------------ */
+  console.info(
+    `ProtectedClientRoute → invalid id ${id} not in [${clientIds.join(",")}]`
+  );
   if (clientIds.length > 1) {
-    return <Navigate to="/client" replace />
+    return <Navigate to="/client" replace />;
   }
-  return <Navigate to="/" replace />
+  return <Navigate to="/" replace />;
 }

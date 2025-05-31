@@ -1,104 +1,129 @@
 // src/data/FirestorePaymentStore.ts
 
-/**
- * FirestorePaymentStore.ts
- *
- * Firestore-based implementation of the PaymentStore interface.
- * Uses the “payments” collection in Firestore and provides:
- *   • getById(id)
- *   • listAll()
- *   • listByAppointment(appointmentId)
- *   • listByClient(clientId)
- *   • save(payment)
- *
- * Implements PaymentStore to ensure method signatures stay in sync.
- */
-
-import { Payment } from "../models/Payment";
-import { PaymentStore } from "./PaymentStore";
-import { db } from "../firebase";
 import {
+  getFirestore,
   collection,
   doc,
+  setDoc,
   getDoc,
-  getDocs,
   query,
   where,
-  setDoc,
+  getDocs,
   Timestamp,
-  CollectionReference,
-  DocumentReference,
 } from "firebase/firestore";
-
-// Firestore collection name
-const PAYMENTS_COLLECTION = "payments";
+import { Payment, PaymentStatus, PaymentGatewayProvider } from "../models/Payment";
+import { PaymentStore } from "./PaymentStore";
 
 export class FirestorePaymentStore implements PaymentStore {
-  // Reference to the Firestore “payments” collection
-  private collRef: CollectionReference = collection(db, PAYMENTS_COLLECTION);
+  private db = getFirestore();
+  private paymentsCol = collection(this.db, "payments");
 
   /**
-   * Fetch a single payment by its document ID.
+   * Converts a Firestore document snapshot into our Payment type.
    */
-  async getById(id: string): Promise<Payment | null> {
-    const docRef: DocumentReference = doc(db, PAYMENTS_COLLECTION, id);
+  private docToPayment(docSnap: any): Payment {
+    const data = docSnap.data();
+    return {
+      // BaseEntity fields (id, createdAt, updatedAt)
+      id: docSnap.id,
+      createdAt: (data.createdAt as Timestamp).toDate(),
+      updatedAt: (data.updatedAt as Timestamp).toDate(),
+
+      // Original fields
+      appointmentId: data.appointmentId as string,
+      clientId: data.clientId as string,
+      amount: data.amount as number,
+      currency: data.currency as string,
+      tenderType: data.tenderType as string,
+      transactionId: data.transactionId as string,
+      paymentStatus: data.paymentStatus as PaymentStatus,
+      receiptUrl: data.receiptUrl as string,
+      processedAt: (data.processedAt as Timestamp).toDate(),
+      fees: data.fees as number | undefined,
+      netTotal: data.netTotal as number | undefined,
+      tenderNote: data.tenderNote as string | undefined,
+      cardBrand: data.cardBrand as string | undefined,
+      panSuffix: data.panSuffix as string | undefined,
+      detailsUrl: data.detailsUrl as string | undefined,
+      customFields: data.customFields as Record<string, any> | undefined,
+
+      // New fields
+      gateway: data.gateway as PaymentGatewayProvider,
+      refundId: data.refundId as string | undefined,
+      refundStatus: data.refundStatus as PaymentStatus | undefined,
+      refundedAt: data.refundedAt
+        ? (data.refundedAt as Timestamp).toDate()
+        : undefined,
+    } as Payment;
+  }
+
+  /**
+   * Fetch a single payment by its transactionId (document ID).
+   * Returns null if not found.
+   */
+  async getByTransactionId(transactionId: string): Promise<Payment | null> {
+    const docRef = doc(this.paymentsCol, transactionId);
     const snap = await getDoc(docRef);
     if (!snap.exists()) return null;
-    return { id: snap.id, ...(snap.data() as Payment) };
+    return this.docToPayment(snap);
   }
 
   /**
-   * List *all* payments in the system.
+   * List all payments tied to a given appointment ID.
+   * If none exist, returns an empty array.
    */
-  async listAll(): Promise<Payment[]> {
-    const snaps = await getDocs(this.collRef);
-    return snaps.docs.map(d => ({ id: d.id, ...(d.data() as Payment) }));
-  }
-
-  /**
-   * List payments tied to a specific appointment.
-   */
-  async listByAppointment(appointmentId: string): Promise<Payment[]> {
-    const byApptQuery = query(
-      this.collRef,
+  async listByAppointmentId(appointmentId: string): Promise<Payment[]> {
+    const q = query(
+      this.paymentsCol,
       where("appointmentId", "==", appointmentId)
     );
-    const snaps = await getDocs(byApptQuery);
-    return snaps.docs.map(d => ({ id: d.id, ...(d.data() as Payment) }));
+    const snap = await getDocs(q);
+    const results: Payment[] = [];
+    snap.forEach((docSnap) => {
+      results.push(this.docToPayment(docSnap));
+    });
+    return results;
   }
 
   /**
-   * List payments tied to a specific client.
-   */
-  async listByClient(clientId: string): Promise<Payment[]> {
-    const byClientQuery = query(
-      this.collRef,
-      where("clientId", "==", clientId)
-    );
-    const snaps = await getDocs(byClientQuery);
-    return snaps.docs.map(d => ({ id: d.id, ...(d.data() as Payment) }));
-  }
-
-  /**
-   * Create or update a payment document.
-   * Preserves createdAt if already set, and updates updatedAt.
+   * Create or overwrite a payment document.
+   * Uses `payment.transactionId` as the Firestore document ID.
    */
   async save(payment: Payment): Promise<void> {
-    const now = Timestamp.now();
-    // Choose new or existing docRef
-    const docRef: DocumentReference = payment.id
-      ? doc(db, PAYMENTS_COLLECTION, payment.id)
-      : doc(this.collRef);
+    const docRef = doc(this.paymentsCol, payment.transactionId);
 
-    await setDoc(
-      docRef,
-      {
-        ...payment,
-        createdAt: payment.createdAt || now,
-        updatedAt: now,
-      },
-      { merge: true }
-    );
+    // Helper to convert Date → Firestore Timestamp
+    const toTimestamp = (d: Date | undefined): Timestamp | null =>
+      d ? Timestamp.fromDate(d) : null;
+
+    await setDoc(docRef, {
+      // BaseEntity
+      createdAt: Timestamp.fromDate(payment.createdAt),
+      updatedAt: Timestamp.fromDate(payment.updatedAt),
+
+      // Original fields
+      appointmentId: payment.appointmentId,
+      clientId: payment.clientId,
+      amount: payment.amount,
+      currency: payment.currency,
+      tenderType: payment.tenderType,
+      transactionId: payment.transactionId,
+      paymentStatus: payment.paymentStatus,
+      receiptUrl: payment.receiptUrl,
+      processedAt: Timestamp.fromDate(payment.processedAt),
+      fees: payment.fees ?? null,
+      netTotal: payment.netTotal ?? null,
+      tenderNote: payment.tenderNote ?? null,
+      cardBrand: payment.cardBrand ?? null,
+      panSuffix: payment.panSuffix ?? null,
+      detailsUrl: payment.detailsUrl ?? null,
+      customFields: payment.customFields ?? null,
+
+      // New fields
+      gateway: payment.gateway,
+      refundId: payment.refundId ?? null,
+      refundStatus: payment.refundStatus ?? null,
+      refundedAt: toTimestamp(payment.refundedAt) ?? null,
+    });
   }
 }
-

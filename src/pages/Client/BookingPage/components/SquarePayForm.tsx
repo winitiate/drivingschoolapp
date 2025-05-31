@@ -1,8 +1,49 @@
+// src/pages/Client/BookingPage/components/SquarePayForm.tsx
+
 import React, { useEffect, useRef, useState } from "react";
 import { CircularProgress, Box, Alert, Button } from "@mui/material";
 import { createPayment } from "../../../../api/createPayment";
 
-/* ──────────────────────────────────────────────────────────── */
+/**
+ * The shape of data returned by our server’s createPayment endpoint.
+ * It looks like:
+ * {
+ *   success: true,
+ *   payment: {
+ *     paymentId: string,
+ *     status: "COMPLETED" | "PENDING",
+ *     // (other fields like receiptUrl, feesCents, etc., if you extend the backend)
+ *   }
+ * }
+ */
+interface CreatePaymentResponse {
+  success: boolean;
+  payment: {
+    paymentId: string;
+    status: "COMPLETED" | "PENDING";
+    // You can add more fields here if your backend returns them,
+    // e.g. receiptUrl?: string;
+    //      feesCents?: number;
+    //      netTotalCents?: number;
+    //      cardBrand?: string;
+    //      panSuffix?: string;
+    //      detailsUrl?: string;
+  };
+}
+
+/**
+ * What we pass back to BookingPage’s handlePaid callback.
+ * transactionId is the Square payment ID; others are optional.
+ */
+interface PaymentResult {
+  transactionId: string;
+  receiptUrl?: string;
+  feesCents?: number;
+  netTotalCents?: number;
+  cardBrand?: string;
+  panSuffix?: string;
+  detailsUrl?: string;
+}
 
 interface Props {
   applicationId:     string;
@@ -10,7 +51,10 @@ interface Props {
   amountCents:       number;
   appointmentTypeId: string;
   serviceLocationId: string;
-  onSuccess:         () => void;
+  /**
+   * Called when payment succeeds, passing a PaymentResult
+   */
+  onSuccess:         (paymentResult: PaymentResult) => void;
   onCancel:          () => void;
 }
 
@@ -21,8 +65,6 @@ declare global {
   }
 }
 
-/* ──────────────────────────────────────────────────────────── */
-
 export default function SquarePayForm({
   applicationId,
   locationId,
@@ -32,7 +74,7 @@ export default function SquarePayForm({
   onSuccess,
   onCancel,
 }: Props) {
-  const [error,       setError]       = useState<string | null>(null);
+  const [error,        setError]        = useState<string | null>(null);
   const [initialising, setInitialising] = useState(true);
   const [paying,       setPaying]       = useState(false);
 
@@ -45,10 +87,10 @@ export default function SquarePayForm({
 
   /* ───────── attach card safely ───────── */
   const attachCard = async () => {
-    if (cardRef.current || attachInFlightRef.current) return;      // already have one or attaching
+    if (cardRef.current || attachInFlightRef.current) return;
     attachInFlightRef.current = true;
 
-    /* clear any stale markup first (strict-mode double-mount safety) */
+    // Clear any stale DOM in strict mode double-mount scenarios
     const holder = document.getElementById("card-container");
     if (holder) holder.innerHTML = "";
 
@@ -58,14 +100,13 @@ export default function SquarePayForm({
 
     const card = await paymentsRef.current.card();
     await card.attach("#card-container");
-
     cardRef.current = card;
     attachInFlightRef.current = false;
   };
 
   /* ───────── load Square SDK & attach once ───────── */
   useEffect(() => {
-    /* quick sanity check on the applicationId format */
+    // Simple sanity check for application ID prefix
     if (!/^sandbox-|^sq0idp-/.test(applicationId)) {
       setError("Invalid Square applicationId");
       setInitialising(false);
@@ -83,21 +124,21 @@ export default function SquarePayForm({
     };
 
     if (window.Square) {
-      /* SDK already present (likely re-open of dialog) */
+      // Already loaded (likely re-open of dialog)
       start();
     } else {
-      /* Inject the SDK script exactly once */
+      // Inject the SDK script once
       const existing = document.getElementById("sq-sdk") as HTMLScriptElement | null;
       if (existing) {
         existing.addEventListener("load", start, { once: true });
       } else {
         const script = document.createElement("script");
-        script.id  = "sq-sdk";
+        script.id = "sq-sdk";
         script.src = applicationId.startsWith("sandbox-")
           ? "https://sandbox.web.squarecdn.com/v1/square.js"
           : "https://web.squarecdn.com/v1/square.js";
         script.async = true;
-        script.onload  = start;
+        script.onload = start;
         script.onerror = () => {
           setError("Failed to load Square SDK");
           setInitialising(false);
@@ -125,19 +166,41 @@ export default function SquarePayForm({
     setError(null);
 
     try {
+      // Tokenize the card
       const { token, status } = await cardRef.current.tokenize();
       if (status !== "OK") throw new Error("Card tokenisation failed");
 
-      /* call your serverless function / backend */
-      await createPayment({
-        ownerType: "serviceLocation",
-        ownerId:   serviceLocationId,
+      // Call our backend to create a payment
+      const resp: CreatePaymentResponse = await createPayment({
+        ownerType:        "serviceLocation",
+        ownerId:          serviceLocationId,
         appointmentTypeId,
         amountCents,
-        nonce: token,
+        nonce:            token,
       });
 
-      onSuccess();
+      if (!resp.success) {
+        throw new Error("Payment failed on server");
+      }
+
+      const paymentId = resp.payment.paymentId;
+      if (!paymentId) {
+        throw new Error("Payment succeeded but paymentId is missing");
+      }
+
+      // Build the result to return to BookingPage
+      const paymentResult: PaymentResult = {
+        transactionId: paymentId,
+        // These optional fields can be populated if your backend returns them
+        // receiptUrl:    resp.payment.receiptUrl,
+        // feesCents:     resp.payment.feesCents,
+        // netTotalCents: resp.payment.netTotalCents,
+        // cardBrand:     resp.payment.cardBrand,
+        // panSuffix:     resp.payment.panSuffix,
+        // detailsUrl:    resp.payment.detailsUrl,
+      };
+
+      onSuccess(paymentResult);
     } catch (e: any) {
       setError(e?.message ?? "Payment failed");
     } finally {

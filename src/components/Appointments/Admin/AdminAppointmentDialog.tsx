@@ -26,6 +26,8 @@ export interface AdminAppointmentDialogProps {
   onClose: () => void;
   onSave: (appt: Appointment) => Promise<void>;
   onDelete?: (appt: Appointment) => Promise<void>;
+  /** Called when the user requests a refund for a paid appointment. */
+  onRefund?: (appt: Appointment) => Promise<void>;
   clients: { id: string; label: string }[];
   providers: { id: string; label: string }[];
   types: { id: string; label: string; durationMinutes?: number }[];
@@ -38,6 +40,7 @@ export default function AdminAppointmentDialog({
   onClose,
   onSave,
   onDelete,
+  onRefund,
   clients,
   providers,
   types,
@@ -59,7 +62,9 @@ export default function AdminAppointmentDialog({
       setClientIds(initialData.clientIds ?? []);
       setProviderIds(initialData.serviceProviderIds ?? []);
       setStartDT(initialData.startTime ? new Date(initialData.startTime) : new Date());
-      setEndDT(initialData.endTime ? new Date(initialData.endTime) : addMinutes(new Date(), 60));
+      setEndDT(
+        initialData.endTime ? new Date(initialData.endTime) : addMinutes(new Date(), 60),
+      );
     } else {
       setAppointmentTypeId(types[0]?.id || "");
       setClientIds(clients[0] ? [clients[0].id] : []);
@@ -88,21 +93,43 @@ export default function AdminAppointmentDialog({
       durationMinutes: duration,
       status: initialData?.status || "scheduled",
       notes: initialData?.notes || "",
+      metadata: initialData?.metadata || {},
+      paymentId: initialData?.paymentId, // keep existing payment ref (if any)
     };
 
-    await onSave(appt);
-    setSaving(false);
-    onClose();
-  };
-
-  const handleDelete = async () => {
-    if (initialData && onDelete) {
-      setSaving(true);
-      await onDelete(initialData);
+    try {
+      await onSave(appt);
+    } finally {
       setSaving(false);
       onClose();
     }
   };
+
+  const handleDelete = async () => {
+    if (!initialData || !onDelete) return;
+    setSaving(true);
+    try {
+      await onDelete(initialData);
+    } finally {
+      setSaving(false);
+      onClose();
+    }
+  };
+
+  const handleRefund = async () => {
+    if (!initialData || !onRefund) return;
+    setSaving(true);
+    try {
+      await onRefund(initialData);
+    } finally {
+      setSaving(false);
+      onClose();
+    }
+  };
+
+  /* ───────── helpers ───────── */
+  const isPaid = Boolean(initialData?.paymentId);
+  const canRefund = isEdit && isPaid && onRefund;
 
   /* ───────── render ───────── */
   return (
@@ -140,8 +167,7 @@ export default function AdminAppointmentDialog({
               value={startDT}
               onChange={(d) => {
                 setStartDT(d);
-                if (d && endDT && d >= endDT)
-                  setEndDT(addMinutes(d, 60));
+                if (d && endDT && d >= endDT) setEndDT(addMinutes(d, 60));
               }}
               disabled={saving}
             />
@@ -157,11 +183,27 @@ export default function AdminAppointmentDialog({
       </DialogContent>
 
       <DialogActions sx={{ justifyContent: "space-between", p: 2 }}>
-        {isEdit && onDelete && (
-          <Button color="error" onClick={handleDelete} disabled={saving}>
-            Delete
-          </Button>
-        )}
+        <Box display="flex" gap={1}>
+          {canRefund && (
+            <Button
+              color="warning"
+              onClick={handleRefund}
+              disabled={saving}
+            >
+              Refund Payment
+            </Button>
+          )}
+
+          {isEdit && onDelete && (
+            <Button
+              color="error"
+              onClick={handleDelete}
+              disabled={saving}
+            >
+              Cancel Appointment
+            </Button>
+          )}
+        </Box>
 
         <Box display="flex" gap={1}>
           <Button onClick={onClose} disabled={saving}>

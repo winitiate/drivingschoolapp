@@ -1,5 +1,5 @@
 /**
- * A small interface so you can swap in StripeGateway, PayPalGateway, etc.
+ * Generic gateway interface so you can swap in Stripe, PayPal, etc.
  */
 
 export interface CreatePaymentInput {
@@ -11,9 +11,23 @@ export interface CreatePaymentInput {
   idempotencyKey: string;      // client-generated UUID
 }
 
+export interface RefundPaymentInput {
+  ownerType: "serviceLocation" | "business" | "serviceProvider";
+  ownerId: string;             // same credential lookup
+  paymentId: string;           // Square payment to refund
+  reason?: string;
+}
+
 export interface PaymentGateway {
+  /* ───── charges ───── */
   createPayment(input: CreatePaymentInput): Promise<{
     paymentId: string;
     status: "COMPLETED" | "PENDING";
+  }>;
+
+  /* ───── full-amount refunds ───── */
+  refundPayment(input: RefundPaymentInput): Promise<{
+    refundId: string;
+    status: "COMPLETED" | "PENDING" | "FAILED";
   }>;
 }

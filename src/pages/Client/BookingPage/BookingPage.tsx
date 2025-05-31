@@ -1,4 +1,4 @@
-// ­Capacity-aware booking page with embedded Square payment when priceCents > 0
+// src/pages/Client/BookingPage/BookingPage.tsx
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useParams, Navigate } from "react-router-dom";
@@ -14,13 +14,16 @@ import {
 import { LocalizationProvider } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import dayjs, { Dayjs } from "dayjs";
+import { v4 as uuidv4 } from "uuid";
 
 import { FirestoreAppointmentStore } from "../../../data/FirestoreAppointmentStore";
 import { FirestoreAppointmentTypeStore } from "../../../data/FirestoreAppointmentTypeStore";
 import { FirestoreServiceProviderStore } from "../../../data/FirestoreServiceProviderStore";
 import { FirestoreAvailabilityStore } from "../../../data/FirestoreAvailabilityStore";
+import { FirestorePaymentStore } from "../../../data/FirestorePaymentStore";
 
 import type { Appointment } from "../../../models/Appointment";
+import type { Payment } from "../../../models/Payment";
 import type { DailySlot } from "../../../models/Availability";
 
 import AppointmentTypeSelect    from "./components/AppointmentTypeSelect";
@@ -44,19 +47,22 @@ export default function BookingPage() {
   const { id: locId } = useParams<{ id: string }>();
   const { user }      = useAuth();
 
+  // Redirect if not authenticated
   if (!user) return <Navigate to="/sign-in" replace />;
+  // Redirect if no valid location or user not authorized
   if (!locId || !user.clientLocationIds?.includes(locId))
     return <Navigate to="/" replace />;
 
   /* ───────── stores ───────── */
-  const apptStore       = useMemo(() => new FirestoreAppointmentStore(), []);
-  const typeStore       = useMemo(() => new FirestoreAppointmentTypeStore(), []);
-  const providerStore   = useMemo(() => new FirestoreServiceProviderStore(), []);
+  const apptStore         = useMemo(() => new FirestoreAppointmentStore(), []);
+  const typeStore         = useMemo(() => new FirestoreAppointmentTypeStore(), []);
+  const providerStore     = useMemo(() => new FirestoreServiceProviderStore(), []);
   const availabilityStore = useMemo(() => new FirestoreAvailabilityStore(), []);
+  const paymentStore      = useMemo(() => new FirestorePaymentStore(), []);
 
   /* ───────── Square credentials ───────── */
-  const [squareAppId, setSquareAppId] = useState("");
-  const [squareLocId, setSquareLocId] = useState("");
+  const [squareAppId, setSquareAppId] = useState<string>("");
+  const [squareLocId, setSquareLocId] = useState<string>("");
 
   useEffect(() => {
     (async () => {
@@ -76,8 +82,8 @@ export default function BookingPage() {
   }, [locId]);
 
   /* ───────── dropdown state ───────── */
-  const [selectedType,     setSelectedType]     = useState("");
-  const [selectedProvider, setSelectedProvider] = useState("any");
+  const [selectedType,     setSelectedType]     = useState<string>("");
+  const [selectedProvider, setSelectedProvider] = useState<string>("any");
 
   /* next-30-days */
   const next30 = useMemo(
@@ -133,14 +139,20 @@ export default function BookingPage() {
     }
   }, [availLoading, availabilities, providers, apptsByDate, selectedProvider, selectedDate, next30]);
 
+  // Re-introduce firstAvail so DateSelector can use it
   const firstAvail = availableDates[0] ?? null;
 
   useEffect(() => {
-    setSlots(buildSlots(selectedDate, availabilities, providers, apptsByDate, selectedProvider));
+    setSlots(
+      buildSlots(selectedDate, availabilities, providers, apptsByDate, selectedProvider)
+    );
   }, [selectedDate, availabilities, providers, apptsByDate, selectedProvider]);
 
   useEffect(() => {
-    if (!selectedDate) { setExistingAppointments([]); return; }
+    if (!selectedDate) {
+      setExistingAppointments([]);
+      return;
+    }
     const iso = selectedDate.format("YYYY-MM-DD");
     setExistingAppointments(apptsByDate.get(iso) ?? []);
   }, [selectedDate, apptsByDate]);
@@ -148,10 +160,11 @@ export default function BookingPage() {
   /* ───────── slot / dialogs ───────── */
   const [selectedSlot,           setSelectedSlot]           = useState<DailySlot | null>(null);
   const [selectedSlotProviderId, setSelectedSlotProviderId] = useState<string | null>(null);
-  const [confirmOpen,            setConfirmOpen]            = useState(false);
+  const [confirmOpen,            setConfirmOpen]            = useState<boolean>(false);
 
-  const [payOpen, setPayOpen]     = useState(false);
-  const [amountCents, setAmountCents] = useState(0);
+  const [payOpen,              setPayOpen]              = useState<boolean>(false);
+  const [amountCents,          setAmountCents]          = useState<number>(0);
+  const [pendingAppointmentId, setPendingAppointmentId] = useState<string>("");
 
   const pickProviderForAny = (slot: DailySlot): string | null => {
     if (!selectedDate) return null;
@@ -173,14 +186,17 @@ export default function BookingPage() {
   };
 
   /* save appointment helper */
-  const saveAppointment = async () => {
+  // Accepts an explicit ID to use (so we can save with a pending ID after payment)
+  const saveAppointmentWithId = async (appointmentId: string): Promise<void> => {
     if (!selectedDate || !selectedSlot) return;
+
     const iso      = selectedDate.format("YYYY-MM-DD");
     const startDT  = dayjs(`${iso}T${selectedSlot.start}`);
     const endDT    = dayjs(`${iso}T${selectedSlot.end}`);
     const duration = endDT.diff(startDT, "minute");
 
     const payload: Appointment = {
+      id:                 appointmentId,
       appointmentTypeId:  selectedType,
       clientIds:          [user.uid],
       serviceProviderIds: [selectedSlotProviderId ?? ""],
@@ -190,31 +206,108 @@ export default function BookingPage() {
       durationMinutes:    duration,
       status:             "scheduled",
       notes:              "",
+      // Any other Appointment fields remain undefined or defaulted
     };
     await apptStore.save(payload);
+  };
+
+  // If payment is not required, generate a new ID and save
+  const saveAppointment = async (): Promise<string> => {
+    const appointmentId = uuidv4();
+    await saveAppointmentWithId(appointmentId);
+    return appointmentId;
   };
 
   /* confirm dialog handler */
   const onConfirm = useCallback(async () => {
     if (!selectedDate || !selectedSlot) return;
 
+    // Look up priceCents for the selected appointment type
     const typeMeta: any = await typeStore.getById(selectedType);
     const cents: number = typeMeta?.priceCents ?? 0;
 
     if (cents > 0) {
       setAmountCents(cents);
+      // Generate a “pending” appointment ID before payment
+      const tempId = uuidv4();
+      setPendingAppointmentId(tempId);
       setConfirmOpen(false);
       setPayOpen(true);
       return;
     }
 
+    // No payment needed; save immediately
     await saveAppointment();
     setConfirmOpen(false);
+    setPendingAppointmentId("");
   }, [selectedDate, selectedSlot, selectedType, typeStore]);
 
   /* payment success */
-  const handlePaid = async () => {
-    await saveAppointment();
+  const handlePaid = async (paymentResult: {
+    transactionId: string;
+    receiptUrl?: string;
+    feesCents?: number;
+    netTotalCents?: number;
+    cardBrand?: string;
+    panSuffix?: string;
+    detailsUrl?: string;
+  }) => {
+    // If transactionId is missing, at least create the appointment
+    const appointmentId = pendingAppointmentId;
+    await saveAppointmentWithId(appointmentId);
+    setPendingAppointmentId("");
+
+    if (!paymentResult.transactionId) {
+      console.error("Payment succeeded but transactionId is empty");
+      setPayOpen(false);
+      return;
+    }
+
+    // 2) Build the Payment object according to your merged Payment model
+    const now = new Date();
+    const newPayment: Payment = {
+      // BaseEntity fields: id, createdAt, updatedAt
+      id:            paymentResult.transactionId,
+      createdAt:     now,
+      updatedAt:     now,
+
+      // Original fields
+      appointmentId: appointmentId,
+      clientId:      user.uid,
+      amount:        amountCents / 100,           // convert cents → dollars
+      currency:      "CAD",
+      tenderType:    "card",
+      transactionId: paymentResult.transactionId,
+      paymentStatus: "paid",
+      receiptUrl:    paymentResult.receiptUrl || "", // default to empty string
+      processedAt:   now,
+
+      // New field indicating gateway
+      gateway:       "square",
+
+      // Optional fields from Square
+      fees:         paymentResult.feesCents
+                       ? paymentResult.feesCents / 100
+                       : undefined,
+      netTotal:     paymentResult.netTotalCents
+                       ? paymentResult.netTotalCents / 100
+                       : undefined,
+      tenderNote:   "",
+      cardBrand:    paymentResult.cardBrand,
+      panSuffix:    paymentResult.panSuffix,
+      detailsUrl:   paymentResult.detailsUrl,
+      customFields: {},
+
+      // Refund fields start undefined
+      refundId:     undefined,
+      refundStatus: undefined,
+      refundedAt:   undefined,
+    };
+
+    // 3) Save the payment record in Firestore
+    await paymentStore.save(newPayment);
+
+    // 4) Close the payment dialog
     setPayOpen(false);
   };
 
