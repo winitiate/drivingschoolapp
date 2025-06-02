@@ -1,33 +1,42 @@
+// functions/src/payments/gateways/PaymentGateway.ts
+
 /**
- * Generic gateway interface so you can swap in Stripe, PayPal, etc.
+ * Shared type declarations for createPayment/refundPayment.
  */
 
 export interface CreatePaymentInput {
-  ownerType: "serviceLocation" | "business" | "serviceProvider";
-  ownerId: string;             // to fetch the encrypted credential
-  appointmentTypeId: string;   // for bookkeeping/notes
+  ownerType: string;
+  ownerId: string;
+  idempotencyKey: string;
+  nonce: string;
   amountCents: number;
-  nonce: string;               // card token from Web Payments SDK
-  idempotencyKey: string;      // client-generated UUID
+  appointmentTypeId: string;
+}
+
+export interface CreatePaymentResult {
+  paymentId: string;
+  status: "COMPLETED" | "PENDING";
 }
 
 export interface RefundPaymentInput {
-  ownerType: "serviceLocation" | "business" | "serviceProvider";
-  ownerId: string;             // same credential lookup
-  paymentId: string;           // Square payment to refund
+  ownerType: string;
+  ownerId: string;
+  paymentId: string;
+  amountCents: number;
   reason?: string;
 }
 
-export interface PaymentGateway {
-  /* ───── charges ───── */
-  createPayment(input: CreatePaymentInput): Promise<{
-    paymentId: string;
-    status: "COMPLETED" | "PENDING";
-  }>;
+export interface RefundPaymentResult {
+  refundId: string;
+  status: "PENDING" | "COMPLETED" | "FAILED";
+}
 
-  /* ───── full-amount refunds ───── */
-  refundPayment(input: RefundPaymentInput): Promise<{
-    refundId: string;
-    status: "COMPLETED" | "PENDING" | "FAILED";
-  }>;
+export interface PaymentGateway {
+  createPayment(
+    input: CreatePaymentInput
+  ): Promise<CreatePaymentResult>;
+
+  refundPayment(
+    input: RefundPaymentInput
+  ): Promise<RefundPaymentResult>;
 }

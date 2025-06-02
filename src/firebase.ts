@@ -1,9 +1,12 @@
 // src/firebase.ts
-import { initializeApp }       from 'firebase/app';
-import { initializeFirestore } from 'firebase/firestore';
-import { getAuth }            from 'firebase/auth';
 
-const env = import.meta.env as Record<string,string>;
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeFirestore }            from "firebase/firestore";
+import { getAuth }                        from "firebase/auth";
+import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
+
+const env = import.meta.env as Record<string, string>;
+
 const firebaseConfig = {
   apiKey:            env.VITE_FIREBASE_API_KEY!,
   authDomain:        env.VITE_FIREBASE_AUTH_DOMAIN!,
@@ -13,16 +16,31 @@ const firebaseConfig = {
   appId:             env.VITE_FIREBASE_APP_ID!,
 };
 
-console.warn('🔥 firebaseConfig:', firebaseConfig);
+console.warn("🔥 firebaseConfig:", firebaseConfig);
 
-// Initialize app
-const app = initializeApp(firebaseConfig);
+// 1️⃣ Initialize (or reuse) the Firebase App
+function createFirebaseApp() {
+  if (!getApps().length) {
+    return initializeApp(firebaseConfig);
+  } else {
+    return getApp();
+  }
+}
 
-// **Force XHR long-polling and disable fetch-streams** so no Listen channel is ever opened
+const app = createFirebaseApp();
+
+// 2️⃣ Initialize Firestore with your specific settings
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
   useFetchStreams:             false,
 });
 
+// 3️⃣ Initialize Auth (if you need it)
 export const auth = getAuth(app);
 
+// 4️⃣ Initialize Functions and—if on localhost—wire up the emulator
+export const functions = getFunctions(app);
+if (window.location.hostname === "localhost") {
+  // Make sure your Functions emulator is running on port 5001
+  connectFunctionsEmulator(functions, "localhost", 5001);
+}

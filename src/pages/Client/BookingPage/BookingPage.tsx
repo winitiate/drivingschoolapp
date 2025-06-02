@@ -390,6 +390,7 @@ export default function BookingPage() {
               <SquarePayForm
                 applicationId={squareAppId}
                 locationId={squareLocId}
+                appointmentId={pendingAppointmentId}   // ← pass the pending appointment ID here
                 amountCents={amountCents}
                 appointmentTypeId={selectedType}
                 serviceLocationId={locId}

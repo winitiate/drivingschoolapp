@@ -1,145 +1,151 @@
 // functions/src/payments/gateways/SquareGateway.ts
-import { Client, Environment } from "square/legacy";
-import { v4 as uuidv4 } from "uuid";
-import { decrypt } from "../../utils/encryption";
+
 import { getFirestore } from "firebase-admin/firestore";
-import {
-  PaymentGateway,
-  CreatePaymentInput,
-  RefundPaymentInput,
-} from "./PaymentGateway";
+import { decrypt } from "../../utils/encryption";
 
-export class SquareGateway implements PaymentGateway {
-  /* ───────── credential helper ───────── */
-  private async getCredential(ownerType: string, ownerId: string) {
-    const snap = await getFirestore()
-      .collection("paymentCredentials")
-      .where("provider", "==", "square")
-      .where("ownerType", "==", ownerType)
-      .where("ownerId", "==", ownerId)
-      .limit(1)
-      .get();
+export interface CreatePaymentInput {
+  ownerType: string;        // e.g. "serviceLocation"
+  ownerId: string;          // the ID to look up in paymentCredentials
+  idempotencyKey: string;
+  nonce: string;            // card nonce/token from frontend
+  amountCents: number;
+  appointmentTypeId: string;
+}
 
-    if (snap.empty) throw new Error("Square credential not found");
+export interface RefundPaymentInput {
+  ownerType: string;        // e.g. "serviceLocation"
+  ownerId: string;          // same ownerType/ownerId as CreatePaymentInput
+  paymentId: string;        // the Square payment ID to refund
+  amountCents: number;      // amount in cents to refund
+  reason: string;
+}
 
-    const data = snap.docs[0].data();
-    const accessToken = decrypt(data.credentials.accessToken);
+interface SquareCredential {
+  accessToken: string;
+  applicationId: string;
+  locationId: string;
+}
 
-    console.log("🔓 Square token prefix:", accessToken.slice(0, 10) + "…");
+// For sandbox, use the sandbox base. Switch to https://connect.squareup.com for production.
+const SQUARE_API_BASE = "https://connect.squareupsandbox.com";
+
+/**
+ * Look up and decrypt the credential stored in paymentCredentials/{id}
+ */
+async function fetchCredential(
+  ownerType: string,
+  ownerId: string
+): Promise<SquareCredential> {
+  const snap = await getFirestore()
+    .collection("paymentCredentials")
+    .where("provider", "==", "square")
+    .where("ownerType", "==", ownerType)
+    .where("ownerId", "==", ownerId)
+    .limit(1)
+    .get();
+
+  if (snap.empty) {
+    throw new Error("Square credential not found");
+  }
+  const data = snap.docs[0].data();
+  return {
+    accessToken: decrypt(data.credentials.accessToken),
+    applicationId: data.credentials.applicationId,
+    locationId: data.credentials.locationId as string,
+  };
+}
+
+export class SquareGateway {
+  /**
+   * Create a payment by calling Square’s REST API
+   */
+  async createPayment(input: CreatePaymentInput): Promise<{
+    paymentId: string;
+    status: "COMPLETED" | "PENDING";
+  }> {
+    const creds = await fetchCredential(input.ownerType, input.ownerId);
+
+    const url = `${SQUARE_API_BASE}/v2/payments`;
+    const body = {
+      source_id:       input.nonce,
+      idempotency_key: input.idempotencyKey,
+      amount_money:    { amount: input.amountCents, currency: "CAD" },
+      location_id:     creds.locationId,
+      note:            `ApptType:${input.appointmentTypeId}`,
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type":   "application/json",
+        "Authorization":  `Bearer ${creds.accessToken}`,
+        "Square-Version": "2022-03-16",
+      },
+      body: JSON.stringify(body),
+    });
+
+    const json = await res.json();
+    if (!res.ok) {
+      const detail = Array.isArray(json.errors)
+        ? json.errors.map((e: any) => e.detail).join(", ")
+        : JSON.stringify(json);
+      throw new Error(`Square createPayment failed: ${detail}`);
+    }
+
+    const payment = json.payment;
+    if (!payment?.id || !payment?.status) {
+      throw new Error("Square returned no payment or status");
+    }
 
     return {
-      accessToken,
-      locationId: data.credentials.locationId as string,
+      paymentId: payment.id,
+      status:    payment.status === "COMPLETED" ? "COMPLETED" : "PENDING",
     };
   }
 
-  /* ───────── charge a card ───────── */
-  async createPayment(input: CreatePaymentInput) {
-    const creds = await this.getCredential(input.ownerType, input.ownerId);
+  /**
+   * Refund a payment by calling Square’s REST API
+   */
+  async refundPayment(input: RefundPaymentInput): Promise<{
+    refundId: string;
+    status:   "COMPLETED" | "PENDING" | "FAILED";
+  }> {
+    const creds = await fetchCredential(input.ownerType, input.ownerId);
 
-    const client = new Client({
-      accessToken: creds.accessToken,
-      environment: Environment.Sandbox,
-      squareVersion: "2025-05-21",
-    });
-
-    // Compat with SDK ≥17 (`paymentsApi`) and legacy (`payments`)
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const paymentsApi = client.paymentsApi ?? client.payments;
-    if (!paymentsApi?.createPayment) {
-      throw new Error("Square SDK payments API not available on client");
-    }
-
+    const url = `${SQUARE_API_BASE}/v2/refunds`;
     const body = {
-      idempotencyKey: input.idempotencyKey,
-      sourceId: input.nonce,
-      amountMoney: {
-        amount: BigInt(input.amountCents),
-        currency: "CAD",
-      },
-      locationId: creds.locationId,
-      note: `ApptType:${input.appointmentTypeId}`,
+      idempotency_key: `refund-${input.paymentId}-${Date.now()}`,
+      payment_id:      input.paymentId,
+      amount_money:    { amount: input.amountCents, currency: "CAD" },
+      reason:          input.reason,
     };
 
-    try {
-      const res = await paymentsApi.createPayment(body);
-      const payment = res.result.payment;
-      if (!payment) throw new Error("No payment returned");
-
-      return {
-        paymentId: payment.id as string,
-        status: payment.status as "COMPLETED" | "PENDING",
-      };
-    } catch (err: any) {
-      console.error("Square createPayment error:", err);
-      const msg =
-        (err.errors?.map((e: any) => e.detail).join(", ")) || err.message;
-      throw new Error(`Square createPayment failed: ${msg}`);
-    }
-  }
-
-  /* ───────── refund a payment ───────── */
-  async refundPayment(
-    input: RefundPaymentInput,
-  ): Promise<{ refundId: string; status: "COMPLETED" | "PENDING" | "FAILED" }> {
-    const { ownerType, ownerId, paymentId, reason } = input;
-    const creds = await this.getCredential(ownerType, ownerId);
-
-    const client = new Client({
-      accessToken: creds.accessToken,
-      environment: Environment.Sandbox,
-      squareVersion: "2025-05-21",
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type":   "application/json",
+        "Authorization":  `Bearer ${creds.accessToken}`,
+        "Square-Version": "2022-03-16",
+      },
+      body: JSON.stringify(body),
     });
 
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const paymentsApi = client.paymentsApi ?? client.payments;
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const refundsApi = client.refundsApi ?? client.refunds;
-    if (!refundsApi?.refundPayment) {
-      throw new Error("Square SDK refunds API not available on client");
+    const json = await res.json();
+    if (!res.ok) {
+      const detail = Array.isArray(json.errors)
+        ? json.errors.map((e: any) => e.detail).join(", ")
+        : JSON.stringify(json);
+      throw new Error(`Square refundPayment failed: ${detail}`);
     }
 
-    /* 1️⃣  Get the original payment to know amount/currency */
-    const payRes = await paymentsApi.getPayment(paymentId);
-    const payment = payRes.result.payment;
-    if (!payment?.amountMoney?.amount) throw new Error("Payment not found");
+    const refund = json.refund;
+    if (!refund?.id || !refund?.status) {
+      throw new Error("Square returned no refund or status");
+    }
 
-    const originalAmount = BigInt(
-      payment.amountMoney.amount as unknown as string | number | bigint,
-    );
-    const currency = payment.amountMoney.currency;
-
-    /* 2️⃣  Issue a full refund */
-    const body = {
-      idempotencyKey: uuidv4(),
-      paymentId,
-      amountMoney: {
-        amount: originalAmount,
-        currency,
-      },
-      reason: reason ?? "Cancelled via dashboard",
+    return {
+      refundId: refund.id,
+      status:   refund.status as "COMPLETED" | "PENDING" | "FAILED",
     };
-
-    try {
-      const res = await refundsApi.refundPayment(body);
-      const refund = res.result.refund;
-      if (!refund) throw new Error("No refund returned");
-
-      return {
-        refundId: refund.id as string,
-        status: (refund.status || "PENDING") as
-          | "COMPLETED"
-          | "PENDING"
-          | "FAILED",
-      };
-    } catch (err: any) {
-      console.error("Square refundPayment error:", err);
-      const msg =
-        (err.errors?.map((e: any) => e.detail).join(", ")) || err.message;
-      throw new Error(`Square refundPayment failed: ${msg}`);
-    }
   }
 }
