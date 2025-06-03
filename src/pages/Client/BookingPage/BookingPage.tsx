@@ -1,7 +1,7 @@
 // src/pages/Client/BookingPage/BookingPage.tsx
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { useParams, Navigate } from "react-router-dom";
+import { useParams, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../../../auth/useAuth";
 
 import {
@@ -46,6 +46,7 @@ import { db } from "../../../firebase";
 export default function BookingPage() {
   const { id: locId } = useParams<{ id: string }>();
   const { user }      = useAuth();
+  const navigate      = useNavigate();
 
   // Redirect if not authenticated
   if (!user) return <Navigate to="/sign-in" replace />;
@@ -239,8 +240,10 @@ export default function BookingPage() {
     // No payment needed; save immediately
     await saveAppointment();
     setConfirmOpen(false);
-    setPendingAppointmentId("");
-  }, [selectedDate, selectedSlot, selectedType, typeStore]);
+
+    // ── Redirect back to the client dashboard (index at /client/:id) ──
+    navigate(`/client/${locId}`);
+  }, [selectedDate, selectedSlot, selectedType, typeStore, navigate, locId]);
 
   /* payment success */
   const handlePaid = async (paymentResult: {
@@ -307,8 +310,9 @@ export default function BookingPage() {
     // 3) Save the payment record in Firestore
     await paymentStore.save(newPayment);
 
-    // 4) Close the payment dialog
+    // 4) Close the payment dialog and redirect
     setPayOpen(false);
+    navigate(`/client/${locId}`);
   };
 
   /* ───────── render ───────── */

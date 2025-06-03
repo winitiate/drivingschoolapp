@@ -8,7 +8,7 @@ export default function Footer() {
     <Box component="footer" py={2} bgcolor="background.paper">
       <Container maxWidth="md">
         <Typography variant="body2" color="textSecondary" align="center">
-          &copy; {new Date().getFullYear()} Driving School App
+          &copy; {new Date().getFullYear()} Service Business Management App
         </Typography>
       </Container>
     </Box>
