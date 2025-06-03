@@ -1,4 +1,5 @@
 // src/components/Appointments/AppointmentsTable.tsx
+
 import React from "react";
 import {
   Table,
@@ -25,6 +26,7 @@ export interface AppointmentsTableProps {
   onEdit: (appointment: Appointment) => void;
   onAssess?: (appointment: Appointment) => void;
   onViewAssessment?: (appointment: Appointment) => void;
+  onDelete?: (appointment: Appointment) => void; // ← Soft-cancel callback
 }
 
 /** Converts a Date | Timestamp | string | null to formatted text. */
@@ -46,6 +48,7 @@ export default function AppointmentsTable({
   onEdit,
   onAssess,
   onViewAssessment,
+  onDelete,
 }: AppointmentsTableProps) {
   if (loading)
     return (
@@ -92,17 +95,36 @@ export default function AppointmentsTable({
 
             <TableCell align="center">
               <Box display="flex" justifyContent="center" gap={1} flexWrap="nowrap">
-                <Button size="small" onClick={() => onEdit(a)}>Edit</Button>
+                {/* Edit button */}
+                <Button size="small" onClick={() => onEdit(a)}>
+                  Edit
+                </Button>
 
+                {/* Optional Assess button */}
                 {onAssess && (
                   <Button size="small" onClick={() => onAssess(a)}>
                     Assess
                   </Button>
                 )}
 
+                {/* Optional View Assessment button */}
                 {onViewAssessment && (
                   <Button size="small" onClick={() => onViewAssessment(a)}>
                     View&nbsp;Assessment
+                  </Button>
+                )}
+
+                {/*
+                  The “Cancel” button calls onDelete(a) if provided.
+                  It does NOT delete the document itself.
+                */}
+                {onDelete && (
+                  <Button
+                    size="small"
+                    color="error"
+                    onClick={() => onDelete(a)}
+                  >
+                    Cancel
                   </Button>
                 )}
               </Box>

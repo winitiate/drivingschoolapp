@@ -1,4 +1,3 @@
-// src/data/FirestoreAppointmentStore.ts
 import {
   getFirestore,
   collection,
@@ -18,32 +17,40 @@ import { AppointmentStore } from "./AppointmentStore";
 const COLLECTION = "appointments";
 
 export class FirestoreAppointmentStore implements AppointmentStore {
-  private db   = getFirestore();
+  private db = getFirestore();
   private coll = collection(this.db, COLLECTION);
 
-  /* ───────── helpers ───────── */
+  /* ─────────── helpers ─────────── */
 
-  /** Recursively converts Date → Timestamp before write. */
+  /**
+   * Recursively converts Dates → Firestore Timestamps before writing.
+   */
   private static toFirestore(obj: any): any {
     if (obj === null || obj === undefined) return obj;
     if (obj instanceof Date) return Timestamp.fromDate(obj);
-    if (Array.isArray(obj))  return obj.map(FirestoreAppointmentStore.toFirestore);
+    if (Array.isArray(obj)) return obj.map(FirestoreAppointmentStore.toFirestore);
     if (typeof obj === "object") {
       const out: any = {};
-      Object.entries(obj).forEach(([k, v]) => (out[k] = FirestoreAppointmentStore.toFirestore(v)));
+      Object.entries(obj).forEach(([k, v]) => {
+        out[k] = FirestoreAppointmentStore.toFirestore(v);
+      });
       return out;
     }
     return obj;
   }
 
-  /** Recursively converts Timestamp → Date after read. */
+  /**
+   * Recursively converts Timestamps → Date after reading.
+   */
   private static fromFirestore(obj: any): any {
     if (obj === null || obj === undefined) return obj;
     if (obj instanceof Timestamp) return obj.toDate();
-    if (Array.isArray(obj))       return obj.map(FirestoreAppointmentStore.fromFirestore);
+    if (Array.isArray(obj)) return obj.map(FirestoreAppointmentStore.fromFirestore);
     if (typeof obj === "object") {
       const out: any = {};
-      Object.entries(obj).forEach(([k, v]) => (out[k] = FirestoreAppointmentStore.fromFirestore(v)));
+      Object.entries(obj).forEach(([k, v]) => {
+        out[k] = FirestoreAppointmentStore.fromFirestore(v);
+      });
       return out;
     }
     return obj;
@@ -53,46 +60,53 @@ export class FirestoreAppointmentStore implements AppointmentStore {
     return id ? doc(this.db, COLLECTION, id) : doc(this.coll);
   }
 
-  /* ───────── CRUD ───────── */
+  /* ─────────── CRUD ─────────── */
 
   async getById(id: string): Promise<Appointment | null> {
     const snap = await getDoc(this.ref(id));
-    return snap.exists()
-      ? { id: snap.id, ...(FirestoreAppointmentStore.fromFirestore(snap.data()) as Appointment) }
-      : null;
+    if (!snap.exists()) return null;
+
+    // Convert any Firestore Timestamps to JS Dates
+    const data = FirestoreAppointmentStore.fromFirestore(snap.data());
+    return { id: snap.id, ...(data as Appointment) };
   }
 
   async listAll(): Promise<Appointment[]> {
     const snaps = await getDocs(this.coll);
-    return snaps.docs.map(d => ({
-      id: d.id,
-      ...(FirestoreAppointmentStore.fromFirestore(d.data()) as Appointment),
-    }));
+    return snaps.docs.map((d) => {
+      const data = FirestoreAppointmentStore.fromFirestore(d.data());
+      return { id: d.id, ...(data as Appointment) };
+    });
   }
 
   async listByClient(clientId: string): Promise<Appointment[]> {
-    const q  = query(this.coll, where("clientIds", "array-contains", clientId));
+    const q = query(this.coll, where("clientIds", "array-contains", clientId));
     const ss = await getDocs(q);
-    return ss.docs.map(d => ({
-      id: d.id,
-      ...(FirestoreAppointmentStore.fromFirestore(d.data()) as Appointment),
-    }));
+    return ss.docs.map((d) => {
+      const data = FirestoreAppointmentStore.fromFirestore(d.data());
+      return { id: d.id, ...(data as Appointment) };
+    });
   }
 
   async listByServiceProvider(providerId: string): Promise<Appointment[]> {
-    const q  = query(this.coll, where("serviceProviderIds", "array-contains", providerId));
+    const q = query(this.coll, where("serviceProviderIds", "array-contains", providerId));
     const ss = await getDocs(q);
-    return ss.docs.map(d => ({
-      id: d.id,
-      ...(FirestoreAppointmentStore.fromFirestore(d.data()) as Appointment),
-    }));
+    return ss.docs.map((d) => {
+      const data = FirestoreAppointmentStore.fromFirestore(d.data());
+      return { id: d.id, ...(data as Appointment) };
+    });
   }
 
+  /**
+   * Saves or updates an appointment.  If the document already exists, it merges;
+   * this allows us to “soft‐cancel” by saving a new `status: "cancelled"`
+   * and `cancellation: {...}` without deleting the record.
+   */
   async save(appt: Appointment): Promise<void> {
-    const { id, ...rest } = appt;              // strip id
+    const { id, ...rest } = appt; // remove `id` before writing
     const now = serverTimestamp();
 
-    const payload = {
+    const payload: any = {
       ...FirestoreAppointmentStore.toFirestore(rest),
       updatedAt: now,
       ...(id ? {} : { createdAt: now }),
@@ -102,6 +116,11 @@ export class FirestoreAppointmentStore implements AppointmentStore {
     await setDoc(this.ref(id), payload, { merge: true });
   }
 
+  /**
+   * We no longer “hard-delete” here.  If you truly want to remove from Firestore,
+   * you can call this; but for “cancellation,” we are simply calling `.save(...)`
+   * with an updated `status: "cancelled"` instead.
+   */
   async delete(id: string): Promise<void> {
     await deleteDoc(this.ref(id));
   }

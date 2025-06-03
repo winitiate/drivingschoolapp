@@ -37,7 +37,10 @@ export const cancelAppointment = onCall<CallData>(async (req: CallableRequest<Ca
   const ownerType = "serviceLocation";
   const ownerId   = apptData.serviceLocationId as string;
   if (!ownerId) {
-    console.error("cancelAppointment → cannot determine ownerId from appointment metadata:", apptData);
+    console.error(
+      "cancelAppointment → cannot determine ownerId from appointment metadata:",
+      apptData
+    );
     throw new Error("Cannot determine ownerId from appointment");
   }
 
@@ -70,15 +73,32 @@ export const cancelAppointment = onCall<CallData>(async (req: CallableRequest<Ca
   // Log what Square returned
   console.log("cancelAppointment → Square refundPayment returned:", refund);
 
-  // 4) Update Firestore to mark the appointment as refunded
+  // 4) Update Firestore to mark the appointment as "cancelled" and record refund details
   await apptRef.update({
-    status:       "refunded",
+    status:       "cancelled",
     refundId:     refund.refundId,
     refundStatus: refund.status,
     refundedAt:   new Date(),
+    cancellation: {
+      time: new Date(),
+      reason,
+      feeApplied: false,
+    },
   });
-
   console.log("cancelAppointment → Firestore updated for appointment:", appointmentId);
+
+  // 5) Update the existing payment document under "payments/{paymentId}"
+  //    (Assumes each payment is stored in Firestore with document ID = paymentId)
+  const paymentRef = db.collection("payments").doc(paymentId);
+  await paymentRef.set(
+    {
+      refundId:     refund.refundId,
+      refundStatus: refund.status,
+      refundedAt:   new Date(),
+    },
+    { merge: true }
+  );
+  console.log("cancelAppointment → Firestore updated for payment:", paymentId);
 
   return { success: true, refund };
 });

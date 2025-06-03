@@ -48,7 +48,7 @@ interface PaymentResult {
 interface Props {
   applicationId:     string;
   locationId?:       string;
-  appointmentId:     string;       // ← NEW required prop for the appointment document ID
+  appointmentId:     string;       // ← REQUIRED prop for the appointment document ID
   amountCents:       number;
   appointmentTypeId: string;
   serviceLocationId: string;
@@ -174,7 +174,7 @@ export default function SquarePayForm({
 
       // Call our backend to create a payment
       const resp: CreatePaymentResponse = await createPayment({
-        appointmentId,     // ← Include the new appointmentId field
+        appointmentId,     // ← Include the appointmentId now
         ownerType:        "serviceLocation",
         ownerId:          serviceLocationId,
         appointmentTypeId,

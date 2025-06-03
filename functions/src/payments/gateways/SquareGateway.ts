@@ -1,40 +1,37 @@
 // functions/src/payments/gateways/SquareGateway.ts
 
 import { getFirestore } from "firebase-admin/firestore";
-import { decrypt } from "../../utils/encryption";
+import { decrypt }      from "../../utils/encryption";
 
 export interface CreatePaymentInput {
-  ownerType: string;        // e.g. "serviceLocation"
-  ownerId: string;          // the ID to look up in paymentCredentials
-  idempotencyKey: string;
-  nonce: string;            // card nonce/token from frontend
-  amountCents: number;
+  ownerType:        string;   // e.g. "serviceLocation"
+  ownerId:          string;   // the ID in paymentCredentials
+  idempotencyKey:   string;
+  nonce:            string;   // card nonce/token from frontend
+  amountCents:      number;
   appointmentTypeId: string;
 }
 
 export interface RefundPaymentInput {
-  ownerType: string;        // e.g. "serviceLocation"
-  ownerId: string;          // same ownerType/ownerId as CreatePaymentInput
-  paymentId: string;        // the Square payment ID to refund
-  amountCents: number;      // amount in cents to refund
-  reason: string;
+  ownerType:   string;   // e.g. "serviceLocation"
+  ownerId:     string;   // same ownerType/ownerId as create
+  paymentId:   string;   // Square payment ID
+  amountCents: number;   // amount to refund, in cents
+  reason:      string;
 }
 
 interface SquareCredential {
-  accessToken: string;
+  accessToken:   string;
   applicationId: string;
-  locationId: string;
+  locationId:    string;
 }
 
-// For sandbox, use the sandbox base. Switch to https://connect.squareup.com for production.
+// For sandbox, use sandbox base. For production, use "https://connect.squareup.com".
 const SQUARE_API_BASE = "https://connect.squareupsandbox.com";
 
-/**
- * Look up and decrypt the credential stored in paymentCredentials/{id}
- */
 async function fetchCredential(
   ownerType: string,
-  ownerId: string
+  ownerId:   string
 ): Promise<SquareCredential> {
   const snap = await getFirestore()
     .collection("paymentCredentials")
@@ -49,9 +46,9 @@ async function fetchCredential(
   }
   const data = snap.docs[0].data();
   return {
-    accessToken: decrypt(data.credentials.accessToken),
+    accessToken:   decrypt(data.credentials.accessToken),
     applicationId: data.credentials.applicationId,
-    locationId: data.credentials.locationId as string,
+    locationId:    data.credentials.locationId as string,
   };
 }
 
@@ -61,7 +58,7 @@ export class SquareGateway {
    */
   async createPayment(input: CreatePaymentInput): Promise<{
     paymentId: string;
-    status: "COMPLETED" | "PENDING";
+    status:    "COMPLETED" | "PENDING";
   }> {
     const creds = await fetchCredential(input.ownerType, input.ownerId);
 
@@ -74,6 +71,8 @@ export class SquareGateway {
       note:            `ApptType:${input.appointmentTypeId}`,
     };
 
+    console.log("SquareGateway.createPayment → request body:", JSON.stringify(body));
+
     const res = await fetch(url, {
       method: "POST",
       headers: {
@@ -85,6 +84,8 @@ export class SquareGateway {
     });
 
     const json = await res.json();
+    console.log("SquareGateway.createPayment → response status:", res.status, "body:", JSON.stringify(json));
+
     if (!res.ok) {
       const detail = Array.isArray(json.errors)
         ? json.errors.map((e: any) => e.detail).join(", ")
@@ -108,7 +109,7 @@ export class SquareGateway {
    */
   async refundPayment(input: RefundPaymentInput): Promise<{
     refundId: string;
-    status:   "COMPLETED" | "PENDING" | "FAILED";
+    status:   "PENDING" | "COMPLETED" | "FAILED";
   }> {
     const creds = await fetchCredential(input.ownerType, input.ownerId);
 
@@ -119,6 +120,8 @@ export class SquareGateway {
       amount_money:    { amount: input.amountCents, currency: "CAD" },
       reason:          input.reason,
     };
+
+    console.log("SquareGateway.refundPayment → request body:", JSON.stringify(body));
 
     const res = await fetch(url, {
       method: "POST",
@@ -131,6 +134,8 @@ export class SquareGateway {
     });
 
     const json = await res.json();
+    console.log("SquareGateway.refundPayment → response status:", res.status, "body:", JSON.stringify(json));
+
     if (!res.ok) {
       const detail = Array.isArray(json.errors)
         ? json.errors.map((e: any) => e.detail).join(", ")
@@ -145,7 +150,7 @@ export class SquareGateway {
 
     return {
       refundId: refund.id,
-      status:   refund.status as "COMPLETED" | "PENDING" | "FAILED",
+      status:   refund.status as "PENDING" | "COMPLETED" | "FAILED",
     };
   }
 }
