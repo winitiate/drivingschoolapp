@@ -1,6 +1,6 @@
 // src/pages/ServiceProvider/ServiceProviderFormDialog.tsx
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -10,7 +10,7 @@ import {
   Alert,
   CircularProgress,
   Box,
-} from '@mui/material'
+} from "@mui/material";
 import {
   getFirestore,
   collection,
@@ -22,18 +22,24 @@ import {
   updateDoc,
   arrayUnion,
   serverTimestamp,
-} from 'firebase/firestore'
-import { v4 as uuidv4 } from 'uuid'
-import type { ServiceProvider } from '../../models/ServiceProvider'
-import { serviceProviderStore } from '../../data'
-import ServiceProviderForm from '../../components/ServiceProviders/ServiceProviderForm'
+} from "firebase/firestore";
+import { v4 as uuidv4 } from "uuid";
+import type { ServiceProvider } from "../../models/ServiceProvider";
+import ServiceProviderForm from "../../components/ServiceProviders/ServiceProviderForm";
 
 interface Props {
-  open: boolean
-  serviceLocationId: string
-  initialData?: ServiceProvider
-  onClose: () => void
-  onSave: (provider: ServiceProvider) => void
+  open: boolean;
+  serviceLocationId: string;
+  initialData?: ServiceProvider;
+  onClose: () => void;
+  /**
+   * The Manager (parent component) does the actual save to Firestore.
+   * We simply hand it a fully-formed ServiceProvider object to persist.
+   *
+   * This callback is responsible for calling FirestoreServiceProviderStore.save(...)
+   * exactly once (so that we do not “double-save”).
+   */
+  onSave: (provider: ServiceProvider) => void;
 }
 
 export default function ServiceProviderFormDialog({
@@ -43,89 +49,116 @@ export default function ServiceProviderFormDialog({
   onClose,
   onSave,
 }: Props) {
-  const db = getFirestore()
-  const isEdit = Boolean(initialData?.id)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const db = getFirestore();
+  const isEdit = Boolean(initialData?.id);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // Local “form” state (partial ServiceProvider). We will assemble a full ServiceProvider
+  // only when the user clicks “Create/Save” below.
   const [form, setForm] = useState<Partial<ServiceProvider>>({
     id: undefined,
-    userId: '',
-    firstName: '',
-    lastName: '',
-    email: '',
-    licenseNumber: '',
-    licenseClass: '',
-    address: { street: '', city: '', postalCode: '' },
-    backgroundCheck: { date: new Date(), status: 'pending' },
+    userId: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+    licenseNumber: "",
+    licenseClass: "",
+    address: { street: "", city: "", postalCode: "" },
+    backgroundCheck: { date: new Date(), status: "pending" },
     rating: { average: 0, reviewCount: 0 },
     availability: [],
     blockedTimes: [],
     vehiclesCertifiedFor: [],
     providerLocationIds: [],
-  })
+  });
 
+  // Whenever the dialog opens, initialize or reset the form:
   useEffect(() => {
-    if (!open) return
+    if (!open) return;
+
     if (initialData) {
+      // Edit existing → copy its entire shape
       setForm({
         ...initialData,
         firstName: initialData.firstName,
         lastName: initialData.lastName,
         email: initialData.email,
         providerLocationIds: initialData.providerLocationIds || [],
-      })
+        licenseNumber: initialData.licenseNumber || "",
+        licenseClass: initialData.licenseClass || "",
+        address: {
+          ...(initialData.address || { street: "", city: "", postalCode: "" }),
+        },
+        backgroundCheck: initialData.backgroundCheck || {
+          date: new Date(),
+          status: "pending",
+        },
+        rating: initialData.rating || { average: 0, reviewCount: 0 },
+        availability: initialData.availability || [],
+        blockedTimes: initialData.blockedTimes || [],
+        vehiclesCertifiedFor: initialData.vehiclesCertifiedFor || [],
+      });
     } else {
+      // Add new → clear everything:
       setForm({
         id: undefined,
-        userId: '',
-        firstName: '',
-        lastName: '',
-        email: '',
-        licenseNumber: '',
-        licenseClass: '',
-        address: { street: '', city: '', postalCode: '' },
-        backgroundCheck: { date: new Date(), status: 'pending' },
+        userId: "",
+        firstName: "",
+        lastName: "",
+        email: "",
+        licenseNumber: "",
+        licenseClass: "",
+        address: { street: "", city: "", postalCode: "" },
+        backgroundCheck: { date: new Date(), status: "pending" },
         rating: { average: 0, reviewCount: 0 },
         availability: [],
         blockedTimes: [],
         vehiclesCertifiedFor: [],
         providerLocationIds: [],
-      })
+      });
     }
-    setError(null)
-  }, [open, initialData])
 
+    setError(null);
+  }, [open, initialData]);
+
+  // Called by <ServiceProviderForm …> whenever any field changes:
   const handleFormChange = (
     data: Partial<ServiceProvider> & {
-      email?: string
-      firstName?: string
-      lastName?: string
+      email?: string;
+      firstName?: string;
+      lastName?: string;
     }
   ) => {
-    setForm(f => ({ ...f, ...data }))
-  }
+    setForm((f) => ({ ...f, ...data }));
+  };
 
+  // Called when user clicks “Create” or “Save Changes”:
   const handleSubmit = async () => {
-    setBusy(true)
-    setError(null)
+    setBusy(true);
+    setError(null);
+
     try {
-      // 1) Resolve or create user by email
-      const email = (form.email || '').trim().toLowerCase()
-      let uid = form.userId || ''
+      // ──────────── STEP 1: Resolve (or create) the /users/{uid} by matching email ────────────
+      const email = (form.email || "").trim().toLowerCase();
+      let uid = form.userId || "";
+
       if (email) {
-        const usersCol = collection(db, 'users')
-        const snap = await getDocs(query(usersCol, where('email', '==', email)))
+        const usersCol = collection(db, "users");
+        const snap = await getDocs(query(usersCol, where("email", "==", email)));
+
         if (!snap.empty) {
-          uid = snap.docs[0].id
+          // Found an existing user doc for that email
+          uid = snap.docs[0].id;
         } else {
-          uid = uuidv4()
-          await setDoc(doc(db, 'users', uid), {
+          // No user doc with this email yet ⇒ create a “placeholder” user
+          uid = uuidv4();
+          await setDoc(doc(db, "users", uid), {
             uid,
             email,
-            firstName: form.firstName || '',
-            lastName: form.lastName || '',
-            roles: ['serviceProvider'],
+            firstName: form.firstName || "",
+            lastName: form.lastName || "",
+            roles: ["serviceProvider"], // since the admin is explicitly adding
             ownedBusinessIds: [],
             memberBusinessIds: [],
             ownedLocationIds: [],
@@ -134,69 +167,99 @@ export default function ServiceProviderFormDialog({
             clientLocationIds: [],
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-          })
+          });
         }
       }
 
-      // 2) Always write name back and ensure role + location linkage
-      await updateDoc(doc(db, 'users', uid), {
-        firstName: form.firstName || '',
-        lastName: form.lastName || '',
+      // ──────────── STEP 2: Patch that /users/{uid} to ensure they have serviceProvider role and are linked to this location ────────────
+      await updateDoc(doc(db, "users", uid), {
+        firstName: form.firstName || "",
+        lastName: form.lastName || "",
         providerLocationIds: arrayUnion(serviceLocationId),
-        roles: arrayUnion('serviceProvider'),
+        roles: arrayUnion("serviceProvider"),
         updatedAt: serverTimestamp(),
-      })
+      });
 
-      // 3) Build ServiceProvider object
-      const id = isEdit ? form.id! : uuidv4()
-      const now = serverTimestamp() as any
-      const provider: ServiceProvider = {
+      // ──────────── STEP 3: Build a “complete” ServiceProvider object ────────────
+      //   Note: If we’re editing, re‐use initialData.id. Otherwise generate a brand‐new ID.
+      const providerId = isEdit
+        ? (form.id as string)
+        : uuidv4();
+
+      const nowTimestamp = serverTimestamp() as any; // Firestore server timestamp
+
+      const fullProvider: ServiceProvider = {
+        // Start with anything the admin previously filled in:
         ...(form as ServiceProvider),
-        id,
+        // Overwrite/ensure these fields exist:
+        id: providerId,
         userId: uid,
-        firstName: form.firstName || '',
-        lastName: form.lastName || '',
+        firstName: form.firstName || "",
+        lastName: form.lastName || "",
         email,
+        licenseNumber: form.licenseNumber || "",
+        licenseClass: form.licenseClass || "",
+        address: form.address || { street: "", city: "", postalCode: "" },
+        backgroundCheck: form.backgroundCheck || {
+          date: new Date(),
+          status: "pending",
+        },
+        rating: form.rating || { average: 0, reviewCount: 0 },
+        availability: form.availability || [],
+        blockedTimes: form.blockedTimes || [],
+        vehiclesCertifiedFor: form.vehiclesCertifiedFor || [],
+        // Ensure our `providerLocationIds` array contains this serviceLocationId
         providerLocationIds: Array.from(
-          new Set([...(form.providerLocationIds || []), serviceLocationId])
+          new Set([
+            ...(form.providerLocationIds || []),
+            serviceLocationId,
+          ])
         ),
-        createdAt: isEdit ? (form.createdAt as any) : now,
-        updatedAt: now,
-      }
+        // Timestamps (createdAt only if we’re editing; otherwise now)
+        createdAt: isEdit
+          ? (form.createdAt as any)
+          : nowTimestamp,
+        updatedAt: nowTimestamp,
+      };
 
-      // 4) Persist ServiceProvider doc
-      await serviceProviderStore.save(provider)
-
-      onSave(provider)
-      onClose()
+      // ──────────── STEP 4: Hand the “complete” provider object back to the Manager ────────────
+      // (Manager will actually call `.save(...)` exactly once.)
+      onSave(fullProvider);
+      onClose();
     } catch (e: any) {
-      setError(e.message || 'Failed to save provider')
+      setError(e.message || "Failed to save provider");
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
-  }
+  };
 
-  if (!open) return null
+  if (!open) return null;
   return (
     <Dialog open fullWidth maxWidth="sm" onClose={onClose}>
       <DialogTitle>
-        {isEdit ? 'Edit Service Provider' : 'Add Service Provider'}
+        {isEdit ? "Edit Service Provider" : "Add Service Provider"}
       </DialogTitle>
       <DialogContent dividers>
         <ServiceProviderForm form={form} onChange={handleFormChange} />
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
         <Button variant="contained" onClick={handleSubmit} disabled={busy}>
           {busy ? (
             <Box display="flex" alignItems="center">
               <CircularProgress size={20} sx={{ mr: 1 }} />
               Saving…
             </Box>
-          ) : isEdit ? 'Save Changes' : 'Create'}
+          ) : isEdit ? (
+            "Save Changes"
+          ) : (
+            "Create"
+          )}
         </Button>
       </DialogActions>
     </Dialog>
-  )
+  );
 }

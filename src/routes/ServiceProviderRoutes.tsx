@@ -6,6 +6,7 @@ import { Route } from 'react-router-dom';
 import ProtectedServiceProviderRoute from '../components/Auth/ProtectedServiceProviderRoute';
 import ServiceProviderLayout         from '../layouts/ServiceProviderLayout';
 
+import ServiceProviderSignIn         from '../pages/ServiceProvider/ServiceProviderSignIn';
 import ServiceProviderSelect         from '../pages/ServiceProvider/ServiceProviderSelect';
 import ServiceProviderDashboard      from '../pages/ServiceProvider/ServiceProviderDashboard';
 import ServiceProviderAppointments   from '../pages/ServiceProvider/ServiceProviderAppointments';
@@ -13,34 +14,43 @@ import ServiceProviderAvailabilityPage from '../pages/ServiceProvider/ServicePro
 import AssessmentPage                from '../pages/ServiceProvider/AssessmentPage';
 
 export const ServiceProviderRoutes = (
-  <Route path="service-provider" element={<ProtectedServiceProviderRoute />}>
-    <Route element={<ServiceProviderLayout />}>
-      {/* /service-provider → pick which provider */}
-      <Route index element={<ServiceProviderSelect />} />
+  <>
+    {/* Unprotected sign-in route */}
+    <Route
+      path="service-provider/sign-in"
+      element={<ServiceProviderSignIn />}
+    />
 
-      {/* /service-provider/:serviceProviderId/... */}
-      <Route path=":serviceProviderId">
-        {/* Dashboard */}
-        <Route index element={<ServiceProviderDashboard />} />
+    {/* All other service-provider routes are protected */}
+    <Route path="service-provider" element={<ProtectedServiceProviderRoute />}>
+      <Route element={<ServiceProviderLayout />}>
+        {/* /service-provider → pick which provider */}
+        <Route index element={<ServiceProviderSelect />} />
 
-        {/* Appointments list */}
-        <Route
-          path="appointments"
-          element={<ServiceProviderAppointments />}
-        />
+        {/* /service-provider/:serviceProviderId/... */}
+        <Route path=":serviceProviderId">
+          {/* Dashboard */}
+          <Route index element={<ServiceProviderDashboard />} />
 
-        {/* Availability management */}
-        <Route
-          path="availability"
-          element={<ServiceProviderAvailabilityPage />}
-        />
+          {/* Appointments list */}
+          <Route
+            path="appointments"
+            element={<ServiceProviderAppointments />}
+          />
 
-        {/* Assessment page */}
-        <Route
-          path="appointments/:appointmentId/assess"
-          element={<AssessmentPage />}
-        />
+          {/* Availability management */}
+          <Route
+            path="availability"
+            element={<ServiceProviderAvailabilityPage />}
+          />
+
+          {/* Assessment page */}
+          <Route
+            path="appointments/:appointmentId/assess"
+            element={<AssessmentPage />}
+          />
+        </Route>
       </Route>
     </Route>
-  </Route>
+  </>
 );

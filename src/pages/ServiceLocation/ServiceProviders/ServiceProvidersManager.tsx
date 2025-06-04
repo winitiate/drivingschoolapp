@@ -1,24 +1,25 @@
 // src/pages/ServiceLocation/ServiceProviders/ServiceProvidersManager.tsx
 
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import {
   Box,
   Button,
   CircularProgress,
   Typography,
-} from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import { FirestoreServiceProviderStore } from '../../../data/FirestoreServiceProviderStore';
-import ServiceProvidersTable from '../../../pages/ServiceProvider/ServiceProvidersTable';
-import ServiceProviderFormDialog from '../../../pages/ServiceProvider/ServiceProviderFormDialog';
-import { getFirestore, doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
-import type { ServiceProvider } from '../../../models/ServiceProvider';
+} from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import { FirestoreServiceProviderStore } from "../../../data/FirestoreServiceProviderStore";
+import ServiceProvidersTable from "../../../pages/ServiceProvider/ServiceProvidersTable";
+import ServiceProviderFormDialog from "../../../pages/ServiceProvider/ServiceProviderFormDialog";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+import type { ServiceProvider } from "../../../models/ServiceProvider";
+
+// A singleton store instance; you can also new it if you prefer:
+const store = new FirestoreServiceProviderStore();
 
 export default function ServiceProvidersManager() {
   const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
-  const store = React.useMemo(() => new FirestoreServiceProviderStore(), []);
-
   const [providers, setProviders] = useState<ServiceProvider[]>([]);
   const [usersMap, setUsersMap] = useState<
     Record<string, { firstName: string; lastName: string; email: string }>
@@ -29,7 +30,10 @@ export default function ServiceProvidersManager() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ServiceProvider | null>(null);
 
-  // Fetch all providers for this location + user info
+  // ─────────────────────────────────────────────────────────────────────
+  // Fetch all providers for this location + build a small “usersMap”
+  // (User’s name & email) so we can render the table.
+  // ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!serviceLocationId) return;
     setLoading(true);
@@ -37,79 +41,101 @@ export default function ServiceProvidersManager() {
 
     (async () => {
       try {
-        const all = await store.listAll();
-        const filtered = all.filter(p =>
-          p.providerLocationIds.includes(serviceLocationId)
-        );
-        setProviders(filtered);
+        // 1) Get all providers whose providerLocationIds array contains this location
+        const all = await store.listByServiceLocation(serviceLocationId);
+        setProviders(all);
 
+        // 2) For each provider, fetch that user’s basic info
         const db = getFirestore();
-        const map: Record<string, { firstName: string; lastName: string; email: string }> = {};
+        const map: Record<
+          string,
+          { firstName: string; lastName: string; email: string }
+        > = {};
+
         await Promise.all(
-          filtered.map(async p => {
+          all.map(async (p) => {
             if (!map[p.userId]) {
-              const snap = await getDoc(doc(db, 'users', p.userId));
+              const snap = await getDoc(doc(db, "users", p.userId));
               if (snap.exists()) {
                 const d = snap.data() as any;
                 map[p.userId] = {
-                  firstName: d.firstName || '',
-                  lastName:  d.lastName  || '',
-                  email:     d.email     || '',
+                  firstName: d.firstName || "",
+                  lastName: d.lastName || "",
+                  email: d.email || "",
                 };
               } else {
-                map[p.userId] = { firstName: '', lastName: '', email: '' };
+                map[p.userId] = { firstName: "", lastName: "", email: "" };
               }
             }
           })
         );
         setUsersMap(map);
       } catch (e: any) {
-        setError(e.message || 'Failed to load providers');
+        setError(e.message || "Failed to load providers");
       } finally {
         setLoading(false);
       }
     })();
-  }, [serviceLocationId, store]);
+  }, [serviceLocationId]);
 
-  // After saving a provider, also ensure the user role, then update local lists
-  const handleSave = async (saved: ServiceProvider) => {
-    // 1) Persist provider
-    await store.save(saved);
+  // ─────────────────────────────────────────────────────────────────────
+  // Called when <ServiceProviderFormDialog> invokes onSave(...)
+  // We do exactly one .save(...) here, then we update local state.
+  // ─────────────────────────────────────────────────────────────────────
+  const handleSave = async (provider: ServiceProvider) => {
+    setLoading(true);
+    setError(null);
 
-    // 2) Update local provider list
-    setProviders(prev => {
-      const idx = prev.findIndex(p => p.id === saved.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = saved;
-        return next;
+    try {
+      // Persist to Firestore (either create or update)
+      await store.save(provider);
+
+      // Update our local `providers[]`
+      setProviders((prev) => {
+        const idx = prev.findIndex((p) => p.id === provider.id);
+        if (idx >= 0) {
+          // overwrite the existing one
+          const next = [...prev];
+          next[idx] = provider;
+          return next;
+        }
+        // Otherwise append the brand‐new one
+        return [...prev, provider];
+      });
+
+      // Refresh just that user’s info in usersMap
+      // (in case firstName / lastName / email just changed)
+      const db = getFirestore();
+      const snap = await getDoc(doc(db, "users", provider.userId));
+      if (snap.exists()) {
+        const d = snap.data() as any;
+        setUsersMap((m) => ({
+          ...m,
+          [provider.userId]: {
+            firstName: d.firstName || "",
+            lastName: d.lastName || "",
+            email: d.email || "",
+          },
+        }));
       }
-      return [...prev, saved];
-    });
-
-    // 3) Patch user roles (already done in store, but refresh local copy)
-    const db = getFirestore();
-    const userRef = doc(db, 'users', saved.userId);
-    const snap = await getDoc(userRef);
-    if (snap.exists()) {
-      const d = snap.data() as any;
-      setUsersMap(m => ({
-        ...m,
-        [saved.userId]: {
-          firstName: d.firstName || '',
-          lastName:  d.lastName  || '',
-          email:     d.email     || '',
-        },
-      }));
+    } catch (e: any) {
+      console.error("🔴 FirestoreServiceProviderStore.save failed:", e);
+      setError(e.message || "Failed to save provider");
+    } finally {
+      setLoading(false);
+      setEditing(null);
+      setDialogOpen(false);
     }
-
-    setDialogOpen(false);
-    setEditing(null);
   };
 
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+      <Box
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        mb={2}
+      >
         <Typography variant="h6">Service Providers</Typography>
         <Button
           variant="contained"
@@ -135,7 +161,7 @@ export default function ServiceProvidersManager() {
           usersMap={usersMap}
           loading={false}
           error={null}
-          onEdit={p => {
+          onEdit={(p) => {
             setEditing(p);
             setDialogOpen(true);
           }}
@@ -146,7 +172,10 @@ export default function ServiceProvidersManager() {
         open={dialogOpen}
         serviceLocationId={serviceLocationId!}
         initialData={editing || undefined}
-        onClose={() => setDialogOpen(false)}
+        onClose={() => {
+          setEditing(null);
+          setDialogOpen(false);
+        }}
         onSave={handleSave}
       />
     </Box>

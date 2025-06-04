@@ -115,7 +115,8 @@ export default function BookingPage() {
   /* availabilities */
   const { availabilities, loading: availLoading } = useAvailabilities(
     selectedProvider,
-    availabilityStore
+    availabilityStore,
+    providers
   );
 
   /* calendar state */
