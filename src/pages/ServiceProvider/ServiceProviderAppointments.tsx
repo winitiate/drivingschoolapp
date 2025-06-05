@@ -1,5 +1,26 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 // src/pages/ServiceProvider/ServiceProviderAppointments.tsx
+
+/**
+ * ServiceProviderAppointments.tsx
+ *
+ * This component displays a list of appointments for the currently
+ * authenticated service provider. It fetches only the appointments
+ * that the provider is authorized to read (i.e., appointment.serviceLocationId
+ * is in the provider’s providerLocationIds, and appointment.serviceProviderId
+ * equals the provider’s ID). Similarly, attempts to load client names
+ * or other user profiles are wrapped in try/catch to avoid “permission denied.”
+ *
+ * Firestore security rules must allow:
+ *  • Reading /serviceProviders/{providerId} if userId == request.auth.uid
+ *  • Reading /appointments/{apptId} if resource.data.locationId is in request.auth.uid’s providerLocationIds
+ *  • Reading /users/{uid} only if uid == request.auth.uid
+ *  • (We wrap all other user‐doc reads in try/catch so failures do not break the UI.)
+ *
+ * Appointment creation, editing, and deletion are performed via apptStore.save(...) and deleteDoc(...),
+ * which require corresponding “allow write” rules on /appointments.
+ */
+
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -9,10 +30,15 @@ import {
   Alert,
   Button,
 } from "@mui/material";
+
 import {
   getFirestore,
   doc,
   getDoc,
+  collection,
+  query,
+  where,
+  getDocs,
   deleteDoc,
 } from "firebase/firestore";
 
@@ -36,7 +62,10 @@ export default function ServiceProviderAppointments() {
   const db = useMemo(() => getFirestore(), []);
   const apptStore = useMemo(() => new FirestoreAppointmentStore(), []);
   const clientStore = useMemo(() => new FirestoreClientStore(), []);
-  const typeStore = useMemo(() => new FirestoreAppointmentTypeStore(), []);
+  const typeStore = useMemo(
+    () => new FirestoreAppointmentTypeStore(),
+    []
+  );
   const providerStore = useMemo(
     () => new FirestoreServiceProviderStore(),
     []
@@ -44,92 +73,178 @@ export default function ServiceProviderAppointments() {
 
   /* ───────── state ───────── */
   const [providerName, setProviderName] = useState("Service Provider");
+  const [providerLocationIds, setProviderLocationIds] = useState<string[]>(
+    []
+  );
+
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Option[]>([]);
   const [types, setTypes] = useState<Option[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Appointment | null>(null);
 
-  /* ───────── 1. provider name ───────── */
+  /* ────────────────────────────────────────────────────────────────────────── */
+  /* 1. Load provider’s profile (to get their name and providerLocationIds)   */
+  /* ────────────────────────────────────────────────────────────────────────── */
   useEffect(() => {
     if (!serviceProviderId) return;
+
     (async () => {
-      const prov = await providerStore.getById(serviceProviderId);
-      if (!prov) return;
-      const snap = await getDoc(doc(db, "users", prov.userId));
-      if (snap.exists()) {
-        const u = snap.data() as any;
-        setProviderName(
-          [u.firstName, u.lastName].filter(Boolean).join(" ") ||
-            "Service Provider"
+      setLoading(true);
+      try {
+        // Fetch the serviceProvider document
+        const prov = await providerStore.getById(serviceProviderId);
+        if (prov) {
+          setProviderLocationIds(prov.providerLocationIds || []);
+
+          // Now fetch that user’s name from /users/{userId}
+          try {
+            const userSnap = await getDoc(
+              doc(db, "users", prov.userId)
+            );
+            if (userSnap.exists()) {
+              const u = userSnap.data() as any;
+              const fullName = [u.firstName, u.lastName]
+                .filter(Boolean)
+                .join(" ");
+              setProviderName(fullName || "Service Provider");
+            }
+          } catch (readErr) {
+            // Possibly permission denied; leave providerName as default
+            console.error(
+              "Error reading /users/{userId} for provider name:",
+              readErr
+            );
+          }
+        }
+      } catch (e: any) {
+        console.error(
+          "Error loading serviceProvider profile:",
+          e
         );
+        setError("Failed to load service provider profile");
+      } finally {
+        setLoading(false);
       }
     })();
-  }, [serviceProviderId]);
+  }, [serviceProviderId, db]);
 
-  /* ───────── 2. load / enrich appointments ───────── */
+  /* ────────────────────────────────────────────────────────────────────────── */
+  /* 2. Load / enrich appointments (based on providerLocationIds and providerId) */
+  /* ────────────────────────────────────────────────────────────────────────── */
   const reload = useCallback(async () => {
     if (!serviceProviderId) return;
+    if (!providerLocationIds.length) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      // A) appointments for this provider
-      const mine = await apptStore.listByServiceProvider(serviceProviderId);
+      // A) Query appointments where:
+      //    serviceLocationId IN providerLocationIds
+      //    AND serviceProviderId == serviceProviderId
+      // Firestore allows "in" on arrays up to 10 elements.
+      const appointmentsQuery = query(
+        collection(db, "appointments"),
+        where(
+          "serviceLocationId",
+          "in",
+          providerLocationIds.slice(0, 10)
+        ),
+        where("serviceProviderId", "==", serviceProviderId)
+      );
+      const apptSnap = await getDocs(appointmentsQuery);
+      const mine: Appointment[] = apptSnap.docs.map((snap) => {
+        const data = snap.data() as Appointment;
+        return { id: snap.id, ...data };
+      });
 
-      // B) unique client IDs (UIDs or Client doc IDs)
+      // B) Build a unique set of client IDs from these appointments
       const uniqClientIds = Array.from(
         new Set(mine.flatMap((a) => a.clientIds ?? []))
       );
 
-      const clientOpts: Option[] = await Promise.all(
+      // C) Attempt to load each client’s display name
+      const clientOpts: Option[] = [];
+      await Promise.all(
         uniqClientIds.map(async (cid) => {
-          // 1️⃣ try a Client doc
-          const cEnt = await clientStore.getById(cid);
-          if (cEnt) {
-            const snap = await getDoc(doc(db, "users", cEnt.userId));
-            if (snap.exists()) {
-              const d = snap.data() as any;
-              return {
-                id: cid,
-                label:
-                  [d.firstName, d.lastName].filter(Boolean).join(" ") ||
-                  "Unnamed Client",
-              };
+          let label = "Unknown Client";
+
+          // Try reading /clients/{cid} first
+          try {
+            const cEnt = await clientStore.getById(cid);
+            if (cEnt) {
+              // If client exists, try reading that user's name
+              try {
+                const userSnap = await getDoc(doc(db, "users", cEnt.userId));
+                if (userSnap.exists()) {
+                  const d = userSnap.data() as any;
+                  label =
+                    [d.firstName, d.lastName].filter(Boolean).join(" ") ||
+                    "Unnamed Client";
+                }
+              } catch (userErr) {
+                // Permission error reading /users/{cid.userId}; ignore
+                console.error(
+                  `Permission error reading /users/${cEnt.userId}:`,
+                  userErr
+                );
+              }
+            }
+          } catch (clientErr) {
+            // Permission error reading /clients/{cid}; ignore
+            console.error(`Permission error reading /clients/${cid}:`, clientErr);
+          }
+
+          // If we still have the default label, try reading /users/{cid} directly
+          if (label === "Unknown Client") {
+            try {
+              const userSnap2 = await getDoc(doc(db, "users", cid));
+              if (userSnap2.exists()) {
+                const d2 = userSnap2.data() as any;
+                label =
+                  [d2.firstName, d2.lastName].filter(Boolean).join(" ") ||
+                  "Unnamed Client";
+              }
+            } catch (userErr2) {
+              // Permission error reading /users/{cid}; ignore
+              console.error(`Permission error reading /users/${cid}:`, userErr2);
             }
           }
 
-          // 2️⃣ fall back to treating `cid` as a UID in users/{cid}
-          const snap = await getDoc(doc(db, "users", cid));
-          if (snap.exists()) {
-            const d = snap.data() as any;
-            return {
-              id: cid,
-              label:
-                [d.firstName, d.lastName].filter(Boolean).join(" ") ||
-                "Unnamed Client",
-            };
-          }
-
-          return { id: cid, label: "Unknown Client" };
+          clientOpts.push({ id: cid, label });
         })
       );
       const clientMap = Object.fromEntries(
         clientOpts.map((c) => [c.id, c.label])
       );
 
-      // C) appointment-type map
-      const locIds = Array.from(new Set(mine.map((a) => a.serviceLocationId)));
+      // D) Build appointment-type map by querying types for each serviceLocationId
+      const locIds = Array.from(
+        new Set(mine.map((a) => a.serviceLocationId))
+      );
       const typeLists = await Promise.all(
-        locIds.map((loc) => typeStore.listByServiceLocation(loc))
+        locIds.map(async (loc) => {
+          try {
+            return await typeStore.listByServiceLocation(loc);
+          } catch (typeErr) {
+            console.error(
+              `Error reading appointmentTypes for location ${loc}:`,
+              typeErr
+            );
+            return [];
+          }
+        })
       );
       const typeMap = new Map<string, string>();
       typeLists.flat().forEach((t) => {
-        if (t.id) typeMap.set(t.id, t.title);
+        if (t.id && t.title) {
+          typeMap.set(t.id, t.title);
+        }
       });
       setTypes(
         Array.from(typeMap.entries()).map(([id, title]) => ({
@@ -138,45 +253,61 @@ export default function ServiceProviderAppointments() {
         }))
       );
 
-      // D) enrich rows
+      // E) Enrich each appointment with display names
       const enriched = mine.map((a) => ({
         ...a,
         clientName: (a.clientIds ?? [])
-          .map((id) => clientMap[id] || "Unknown Client")
+          .map((cid) => clientMap[cid] || "Unknown Client")
           .join(", "),
         serviceProviderName: providerName,
-        appointmentTypeName: typeMap.get(a.appointmentTypeId) || "",
+        appointmentTypeName:
+          typeMap.get(a.appointmentTypeId) || "",
       }));
 
       setAppointments(enriched);
       setClients(clientOpts);
     } catch (e: any) {
+      console.error("Failed to load appointments:", e);
       setError(e.message || "Failed to load appointments");
     } finally {
       setLoading(false);
     }
-  }, [serviceProviderId, providerName]);
+  }, [serviceProviderId, providerLocationIds, providerName, db]);
 
   useEffect(() => {
     reload();
   }, [reload]);
 
-  /* ───────── 3. save / delete ───────── */
+  /* ────────────────────────────────────────────────────────────────────────── */
+  /* 3. save / delete appointment */
+  /* ────────────────────────────────────────────────────────────────────────── */
   const handleSave = async (a: Appointment) => {
-    await apptStore.save(a);
-    setDialogOpen(false);
-    setEditing(null);
-    reload();
+    try {
+      await apptStore.save(a);
+      setDialogOpen(false);
+      setEditing(null);
+      reload();
+    } catch (saveErr: any) {
+      console.error("Failed to save appointment:", saveErr);
+      setError(saveErr.message || "Failed to save appointment");
+    }
   };
 
   const handleDelete = async (a: Appointment) => {
-    await deleteDoc(doc(db, "appointments", a.id!));
-    setDialogOpen(false);
-    setEditing(null);
-    reload();
+    try {
+      await deleteDoc(doc(db, "appointments", a.id!));
+      setDialogOpen(false);
+      setEditing(null);
+      reload();
+    } catch (delErr: any) {
+      console.error("Failed to delete appointment:", delErr);
+      setError(delErr.message || "Failed to delete appointment");
+    }
   };
 
-  /* ───────── 4. render ───────── */
+  /* ────────────────────────────────────────────────────────────────────────── */
+  /* 4. render */
+  /* ────────────────────────────────────────────────────────────────────────── */
   return (
     <Box>
       <Box
@@ -226,13 +357,19 @@ export default function ServiceProviderAppointments() {
 
       <AppointmentFormDialog
         open={dialogOpen}
+        // For new appointments, default to first location if available
         serviceLocationId={appointments[0]?.serviceLocationId || ""}
         initialData={editing || undefined}
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
         onDelete={editing ? handleDelete : undefined}
         clients={clients}
-        serviceProviders={[{ id: serviceProviderId!, label: providerName }]}
+        serviceProviders={[
+          {
+            id: serviceProviderId!,
+            label: providerName,
+          },
+        ]}
         appointmentTypes={types}
         canEditClient={true}
         canEditProvider={false}

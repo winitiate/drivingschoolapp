@@ -1,33 +1,43 @@
 // src/components/BusinessForm/StatusNotes.tsx
-import React from 'react'
-import { Grid, TextField, MenuItem } from '@mui/material'
-import { Controller, Control, FieldErrors } from 'react-hook-form'
-import { BusinessFormProps } from './BusinessForm'
 
-const statusOptions = ['active', 'pending', 'suspended', 'closed']
+import React from "react";
+import { Grid, TextField, FormControl, InputLabel, Select, MenuItem } from "@mui/material";
+import { Controller, useFormContext } from "react-hook-form";
 
-export default function StatusNotes({
-  control,
-  errors
-}: Pick<BusinessFormProps, 'control' | 'errors'>) {
+export default function StatusNotes() {
+  // Pull `control` and `formState.errors` from the enclosing FormProvider
+  const {
+    control,
+    formState: { errors },
+  } = useFormContext();
+
   return (
     <>
+      {/* Status dropdown */}
       <Grid item xs={12} sm={6}>
-        <Controller
-          name="status"
-          control={control}
-          render={({ field }) => (
-            <TextField {...field} fullWidth select label="Status">
-              {statusOptions.map(opt => (
-                <MenuItem key={opt} value={opt}>
-                  {opt.charAt(0).toUpperCase() + opt.slice(1)}
-                </MenuItem>
-              ))}
-            </TextField>
-          )}
-        />
+        <FormControl fullWidth error={!!errors.status}>
+          <InputLabel id="status-label">Status</InputLabel>
+          <Controller
+            name="status"
+            control={control}
+            defaultValue="active"
+            render={({ field }) => (
+              <Select
+                {...field}
+                labelId="status-label"
+                label="Status"
+                fullWidth
+              >
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="inactive">Inactive</MenuItem>
+              </Select>
+            )}
+          />
+        </FormControl>
       </Grid>
-      <Grid item xs={12}>
+
+      {/* Notes text area */}
+      <Grid item xs={12} sm={6}>
         <Controller
           name="notes"
           control={control}
@@ -35,9 +45,9 @@ export default function StatusNotes({
             <TextField
               {...field}
               fullWidth
-              multiline
-              rows={3}
               label="Notes"
+              multiline
+              rows={4}
               error={!!errors.notes}
               helperText={errors.notes?.message}
             />
@@ -45,5 +55,5 @@ export default function StatusNotes({
         />
       </Grid>
     </>
-  )
+  );
 }

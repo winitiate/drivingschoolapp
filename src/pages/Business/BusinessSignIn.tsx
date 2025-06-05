@@ -7,31 +7,34 @@ import {
   Box,
   Typography,
   Alert,
-  Divider
+  Divider,
+  Container,
 } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 import { useAuth } from '../../auth/useAuth';
 import { useNavigate } from 'react-router-dom';
+import Header from '../../components/Layout/Header';
+import Footer from '../../components/Layout/Footer';
 
 export default function BusinessSignIn() {
   const { user, loading, signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError]       = useState<string | null>(null);
-  const [busy, setBusy]         = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   // Whenever auth state changes, route appropriately
   useEffect(() => {
     if (loading) return;
 
     if (user) {
-      // If they've got a business role + ID, send them in
-      if (user.roles.includes('business') && user.businessId) {
-        navigate(`/business/${user.businessId}`, { replace: true });
+      // If they have the "business" role and at least one business ID, redirect to /business
+      if (user.roles.includes('business') && (user.ownedBusinessIds?.length || user.memberBusinessIds?.length)) {
+        navigate('/business', { replace: true });
       } else {
-        // Otherwise, kick them over to the sign-up flow
+        // Otherwise, send them to the sign-up flow
         navigate('/business/sign-up', { replace: true });
       }
     }
@@ -42,8 +45,8 @@ export default function BusinessSignIn() {
     setError(null);
     setBusy(true);
     try {
-      await signIn(email, password);
-      // onAuthStateChanged will handle the redirect
+      await signIn(email.trim().toLowerCase(), password);
+      // onAuthStateChanged effect handles the redirect
     } catch (err: any) {
       setError(err.message || 'Failed to sign in');
     } finally {
@@ -56,7 +59,7 @@ export default function BusinessSignIn() {
     setBusy(true);
     try {
       await signInWithGoogle();
-      // onAuthStateChanged will handle the redirect
+      // onAuthStateChanged effect handles the redirect
     } catch (err: any) {
       setError(err.message || 'Google sign-in failed');
     } finally {
@@ -65,54 +68,62 @@ export default function BusinessSignIn() {
   };
 
   return (
-    <Box component="form" onSubmit={handleSubmit} sx={{ maxWidth: 400, mx: 'auto', mt: 4 }}>
-      <Typography variant="h5" mb={2}>
-        Business Sign In
-      </Typography>
+    <Box>
+      <Header />
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      <Container maxWidth="sm">
+        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 4 }}>
+          <Typography variant="h5" mb={2}>
+            Business Sign In
+          </Typography>
 
-      <TextField
-        label="Email"
-        fullWidth
-        required
-        margin="normal"
-        value={email}
-        onChange={e => setEmail(e.target.value)}
-        disabled={busy}
-      />
-      <TextField
-        label="Password"
-        type="password"
-        fullWidth
-        required
-        margin="normal"
-        value={password}
-        onChange={e => setPassword(e.target.value)}
-        disabled={busy}
-      />
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      <Button
-        type="submit"
-        variant="contained"
-        fullWidth
-        sx={{ mt: 2 }}
-        disabled={busy}
-      >
-        Sign In
-      </Button>
+          <TextField
+            label="Email"
+            fullWidth
+            required
+            margin="normal"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            disabled={busy}
+          />
+          <TextField
+            label="Password"
+            type="password"
+            fullWidth
+            required
+            margin="normal"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            disabled={busy}
+          />
 
-      <Divider sx={{ my: 3 }}>OR</Divider>
+          <Button
+            type="submit"
+            variant="contained"
+            fullWidth
+            sx={{ mt: 2 }}
+            disabled={busy}
+          >
+            {busy ? 'Signing In…' : 'Sign In'}
+          </Button>
 
-      <Button
-        variant="outlined"
-        startIcon={<GoogleIcon />}
-        fullWidth
-        onClick={handleGoogle}
-        disabled={busy}
-      >
-        Sign in with Google
-      </Button>
+          <Divider sx={{ my: 3 }}>OR</Divider>
+
+          <Button
+            variant="outlined"
+            startIcon={<GoogleIcon />}
+            fullWidth
+            onClick={handleGoogle}
+            disabled={busy}
+          >
+            {busy ? 'Please wait…' : 'Sign in with Google'}
+          </Button>
+        </Box>
+      </Container>
+
+      <Footer />
     </Box>
   );
 }

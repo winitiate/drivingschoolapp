@@ -1,43 +1,71 @@
 // src/pages/SuperAdmin/SuperAdminDashboard.tsx
 
-/**
- * SuperAdminDashboard.tsx
- *
- * Landing page for the platform (super-admin) dashboard.
- * Allows the super-admin to manage businesses and sign out.
- */
-
 import React from 'react';
-import { Container, Box, Typography, Button } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { 
+  Container, 
+  Typography, 
+  Button, 
+  Box 
+} from '@mui/material';
 import { useAuth } from '../../auth/useAuth';
-import { Link as RouterLink } from 'react-router-dom';
 
 export default function SuperAdminDashboard() {
   const { user, signOutUser } = useAuth();
+  const navigate = useNavigate();
+
+  const handleManageBusinesses = () => {
+    navigate('/super-admin/businesses');
+  };
+
+  const handleOnboardingSettings = () => {
+    navigate('/super-admin/business-onboarding');
+  };
+
+  const handleSignOut = async () => {
+    await signOutUser();
+    navigate('/', { replace: true });
+  };
 
   return (
-    <Container maxWidth="md">
-      <Box mt={4} mb={2} textAlign="center">
-        <Typography variant="h4">Platform Admin Dashboard</Typography>
-        <Typography variant="subtitle1" color="textSecondary">
-          Welcome, {user?.email}
-        </Typography>
-      </Box>
+    <Container maxWidth="sm" sx={{ mt: 6, textAlign: 'center' }}>
+      {/* Main title */}
+      <Typography variant="h4" gutterBottom>
+        Platform Admin Dashboard
+      </Typography>
 
-      <Box display="flex" justifyContent="center" gap={2} mb={4}>
+      {/* Logged‐in user’s email */}
+      {user?.email && (
+        <Typography variant="subtitle1" color="textSecondary" gutterBottom>
+          Welcome, {user.email}
+        </Typography>
+      )}
+
+      {/* Action buttons */}
+      <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'center' }}>
         <Button
-          component={RouterLink}
-          to="/super-admin/businesses"
           variant="contained"
+          color="primary"
+          onClick={handleManageBusinesses}
         >
           Manage Businesses
         </Button>
-        <Button variant="outlined" onClick={signOutUser}>
-          Sign Out
+
+        <Button
+          variant="contained"
+          color="secondary"
+          onClick={handleOnboardingSettings}
+        >
+          Business Onboarding Settings
         </Button>
       </Box>
 
-      {/* TODO: add stats, pending requests, etc. */}
+      {/* Sign out */}
+      <Box sx={{ mt: 4 }}>
+        <Button variant="outlined" onClick={handleSignOut}>
+          Sign Out
+        </Button>
+      </Box>
     </Container>
   );
 }

@@ -36,8 +36,7 @@ interface Props {
    * The Manager (parent component) does the actual save to Firestore.
    * We simply hand it a fully-formed ServiceProvider object to persist.
    *
-   * This callback is responsible for calling FirestoreServiceProviderStore.save(...)
-   * exactly once (so that we do not “double-save”).
+   * This callback is responsible for calling FirestoreServiceProviderStore.save(...).
    */
   onSave: (provider: ServiceProvider) => void;
 }
@@ -54,8 +53,8 @@ export default function ServiceProviderFormDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Local “form” state (partial ServiceProvider). We will assemble a full ServiceProvider
-  // only when the user clicks “Create/Save” below.
+  // Local “form” state (partial ServiceProvider). We will assemble
+  // a full ServiceProvider only when the user clicks “Create/Save”.
   const [form, setForm] = useState<Partial<ServiceProvider>>({
     id: undefined,
     userId: "",
@@ -70,7 +69,7 @@ export default function ServiceProviderFormDialog({
     availability: [],
     blockedTimes: [],
     vehiclesCertifiedFor: [],
-    providerLocationIds: [],
+    providerLocationIds: [], // ← will be merged with serviceLocationId below
   });
 
   // Whenever the dialog opens, initialize or reset the form:
@@ -78,7 +77,7 @@ export default function ServiceProviderFormDialog({
     if (!open) return;
 
     if (initialData) {
-      // Edit existing → copy its entire shape
+      // Editing an existing provider → copy its entire shape
       setForm({
         ...initialData,
         firstName: initialData.firstName,
@@ -100,7 +99,7 @@ export default function ServiceProviderFormDialog({
         vehiclesCertifiedFor: initialData.vehiclesCertifiedFor || [],
       });
     } else {
-      // Add new → clear everything:
+      // Adding a new provider → clear all fields
       setForm({
         id: undefined,
         userId: "",
@@ -171,7 +170,8 @@ export default function ServiceProviderFormDialog({
         }
       }
 
-      // ──────────── STEP 2: Patch that /users/{uid} to ensure they have serviceProvider role and are linked to this location ────────────
+      // ──────────── STEP 2: Patch that /users/{uid} to ensure they have
+      //                     serviceProvider role and are linked to this location ────────────
       await updateDoc(doc(db, "users", uid), {
         firstName: form.firstName || "",
         lastName: form.lastName || "",
@@ -181,7 +181,7 @@ export default function ServiceProviderFormDialog({
       });
 
       // ──────────── STEP 3: Build a “complete” ServiceProvider object ────────────
-      //   Note: If we’re editing, re‐use initialData.id. Otherwise generate a brand‐new ID.
+      // If editing, re‐use initialData.id; otherwise generate a new ID.
       const providerId = isEdit
         ? (form.id as string)
         : uuidv4();
@@ -191,6 +191,7 @@ export default function ServiceProviderFormDialog({
       const fullProvider: ServiceProvider = {
         // Start with anything the admin previously filled in:
         ...(form as ServiceProvider),
+
         // Overwrite/ensure these fields exist:
         id: providerId,
         userId: uid,
@@ -208,17 +209,21 @@ export default function ServiceProviderFormDialog({
         availability: form.availability || [],
         blockedTimes: form.blockedTimes || [],
         vehiclesCertifiedFor: form.vehiclesCertifiedFor || [],
-        // Ensure our `providerLocationIds` array contains this serviceLocationId
+
+        // —————————————————————————————————————————————————————————————————
+        // IMPORTANT: Ensure our `providerLocationIds` array contains
+        // the current serviceLocationId. This is the field that the
+        // Firestore rule will check against the admin’s own locations.
         providerLocationIds: Array.from(
           new Set([
             ...(form.providerLocationIds || []),
             serviceLocationId,
           ])
         ),
-        // Timestamps (createdAt only if we’re editing; otherwise now)
-        createdAt: isEdit
-          ? (form.createdAt as any)
-          : nowTimestamp,
+        // —————————————————————————————————————————————————————————————————
+
+        // Timestamps (createdAt only if editing; otherwise now)
+        createdAt: isEdit ? (form.createdAt as any) : nowTimestamp,
         updatedAt: nowTimestamp,
       };
 
@@ -241,7 +246,11 @@ export default function ServiceProviderFormDialog({
       </DialogTitle>
       <DialogContent dividers>
         <ServiceProviderForm form={form} onChange={handleFormChange} />
-        {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>

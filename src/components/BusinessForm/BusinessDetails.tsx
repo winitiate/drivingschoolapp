@@ -1,13 +1,16 @@
 // src/components/BusinessForm/BusinessDetails.tsx
+
 import React from 'react'
 import { Grid, TextField } from '@mui/material'
-import { Controller, Control, FieldErrors } from 'react-hook-form'
-import { BusinessFormProps } from './BusinessForm'
+import { Controller, useFormContext } from 'react-hook-form'
 
-export default function BusinessDetails({
-  control,
-  errors
-}: Pick<BusinessFormProps, 'control' | 'errors'>) {
+export default function BusinessDetails() {
+  // Grab `control` and `formState.errors` from the enclosing FormProvider
+  const {
+    control,
+    formState: { errors },
+  } = useFormContext()
+
   return (
     <>
       <Grid item xs={12} sm={6}>
@@ -26,30 +29,51 @@ export default function BusinessDetails({
           )}
         />
       </Grid>
+
       <Grid item xs={12} sm={6}>
         <Controller
           name="email"
           control={control}
           render={({ field }) => (
-            <TextField {...field} fullWidth label="Email" />
+            <TextField
+              {...field}
+              fullWidth
+              label="Email"
+              error={!!errors.email}
+              helperText={errors.email?.message}
+            />
           )}
         />
       </Grid>
+
       <Grid item xs={12} sm={6}>
         <Controller
           name="phone"
           control={control}
           render={({ field }) => (
-            <TextField {...field} fullWidth label="Phone" />
+            <TextField
+              {...field}
+              fullWidth
+              label="Phone"
+              error={!!errors.phone}
+              helperText={errors.phone?.message}
+            />
           )}
         />
       </Grid>
+
       <Grid item xs={12} sm={6}>
         <Controller
           name="website"
           control={control}
           render={({ field }) => (
-            <TextField {...field} fullWidth label="Website" />
+            <TextField
+              {...field}
+              fullWidth
+              label="Website"
+              error={!!errors.website}
+              helperText={errors.website?.message}
+            />
           )}
         />
       </Grid>
