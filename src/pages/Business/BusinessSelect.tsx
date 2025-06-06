@@ -24,26 +24,49 @@ export default function BusinessSelect() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      const ids = Array.from(new Set([
-        ...(user.ownedBusinessIds || []),
-        ...(user.memberBusinessIds || [])
-      ]))
+      setLoading(true)
+      setError(null)
 
-      if (ids.length === 0) {
-        setBusinesses([])
-        setLoading(false)
-      } else if (ids.length === 1) {
-        // only one business → go straight there
-        navigate(`/business/${ids[0]}`)
-      } else {
-        businessStore.listAll()
-          .then(all => {
-            const assigned = all.filter(b => ids.includes(b.id))
-            setBusinesses(assigned)
-          })
-          .catch(e => setError(e.message || 'Failed to load businesses'))
-          .finally(() => setLoading(false))
-      }
+      // 1) Fetch businesses where user is an owner
+      const ownerPromise = businessStore.queryByOwner(user.uid)
+
+      // 2) Fetch businesses where user is a member
+      const memberPromise = businessStore.queryByMember(user.uid)
+
+      Promise.all([ownerPromise, memberPromise])
+        .then(([ownedList, memberList]) => {
+          const combined: Business[] = []
+          const seen = new Set<string>()
+
+          // Add owned businesses first
+          for (const b of ownedList) {
+            combined.push(b)
+            seen.add(b.id)
+          }
+
+          // Add member businesses if not already included
+          for (const b of memberList) {
+            if (!seen.has(b.id)) {
+              combined.push(b)
+              seen.add(b.id)
+            }
+          }
+
+          if (combined.length === 0) {
+            setBusinesses([])
+            setLoading(false)
+          } else if (combined.length === 1) {
+            // Only one business → go straight there
+            navigate(`/business/${combined[0].id}`, { replace: true })
+          } else {
+            setBusinesses(combined)
+            setLoading(false)
+          }
+        })
+        .catch((e) => {
+          setError(e.message || 'Failed to load businesses')
+          setLoading(false)
+        })
     }
   }, [authLoading, user, navigate])
 

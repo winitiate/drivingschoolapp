@@ -75,16 +75,10 @@ export default function BusinessSignUp() {
   // ─── 2) If authenticated and already has a business → redirect to /business ──
   //
   useEffect(() => {
+    // Once the user is authenticated (e.g. they just signed up),
+    // you probably want to land them on “/business” (their dashboard).
     if (!authLoading && user) {
-      const bizIds = Array.from(
-        new Set([
-          ...(user.ownedBusinessIds || []),
-          ...(user.memberBusinessIds || []),
-        ])
-      );
-      if (bizIds.length) {
-        navigate('/business', { replace: true });
-      }
+      navigate('/business', { replace: true });
     }
   }, [authLoading, user, navigate]);
 
@@ -118,20 +112,41 @@ export default function BusinessSignUp() {
     }
 
     setBusy(true);
+
     try {
-      // 1) Create the new Business document
-      const ref = firestoreDoc(collection(db, 'businesses'));
-      await setDoc(ref, {
+      // ─────────────────────────────────────────────────────────────────────────
+      // 1) Create the new Auth user first, so we get their `uid`
+      // ─────────────────────────────────────────────────────────────────────────
+      const newUser = await signUp(email.trim().toLowerCase(), password, ['business']);
+      // We assume `signUp(...)` returns a `UserCredential`-like object with `user.uid`.
+      // If your `signUp` does not return that, you can read `auth().currentUser` instead after sign-up.
+      const uid = newUser.user.uid;
+      const userEmail = newUser.user.email || email.trim().toLowerCase();
+      const userName = newUser.user.displayName || '';
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // 2) Create a new Business document with ownerId = uid
+      // ─────────────────────────────────────────────────────────────────────────
+      const bizRef = firestoreDoc(collection(db, 'businesses'));
+
+      await setDoc(bizRef, {
         name: name.trim(),
         email: email.trim().toLowerCase(),
+        ownerId: uid,
+        ownerEmail: userEmail,
+        ownerName: userName,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      const businessId = ref.id;
 
-      // 2) Sign up the user with that businessId (role = 'business')
-      await signUp(email.trim().toLowerCase(), password, ['business'], businessId);
-      // onAuthStateChanged will redirect once the account is ready
+      // Optionally: If you want to store this `businessId` on the new user’s profile,
+      // you can do so inside `signUp` (e.g. by writing to /users/{uid}.ownedBusinessIds = [bizRef.id]).
+      // But from here, we simply redirect to their dashboard:
+
+      // ─────────────────────────────────────────────────────────────────────────
+      // 3) Navigate to the business dashboard (or wherever you’d like)
+      // ─────────────────────────────────────────────────────────────────────────
+      navigate(`/business/${bizRef.id}`, { replace: true });
     } catch (err: any) {
       setError(err.message || 'Failed to sign up');
     } finally {

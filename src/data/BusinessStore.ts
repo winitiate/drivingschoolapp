@@ -14,6 +14,18 @@ export interface BusinessStore {
   /** List all businesses in the system */
   listAll(): Promise<Business[]>;
 
-  /** Create or update a business record */
+  /**
+   * Fetch all businesses where the given UID is one of the owners.
+   * Uses Firestore’s `array‐contains` on `ownerIds` under the hood.
+   */
+  queryByOwner(ownerUid: string): Promise<Business[]>;
+
+  /**
+   * Fetch all businesses where the given UID is a member (non-owning team member).
+   * Uses Firestore’s `array‐contains` on `memberIds` under the hood.
+   */
+  queryByMember(memberUid: string): Promise<Business[]>;
+
+  /** Create or update a business record (saves to Firestore) */
   save(business: Business): Promise<void>;
 }

@@ -24,7 +24,6 @@ import {
   serverTimestamp,
   doc,
   setDoc,
-  arrayUnion,
 } from "firebase/firestore";
 import BusinessForm from "../../../components/BusinessForm/BusinessForm";
 
@@ -66,6 +65,8 @@ export default function BusinessFormDialog({
       status: "active",
       notes: "",
       address: { street: "", city: "", state: "", zipCode: "", country: "" },
+
+      // Single-owner fields (we will wrap into arrays on save)
       ownerName: "",
       ownerEmail: "",
       ownerPhone: "",
@@ -104,6 +105,17 @@ export default function BusinessFormDialog({
     }
 
     // Editing existing business → load its values
+    // Since `business.ownerNames` etc. are arrays, take index 0 for the "primary owner"
+    const existingOwnerName = Array.isArray(business.ownerNames)
+      ? business.ownerNames[0] || ""
+      : "";
+    const existingOwnerEmail = Array.isArray(business.ownerEmails)
+      ? business.ownerEmails[0] || ""
+      : "";
+    const existingOwnerPhone = Array.isArray(business.ownerPhones)
+      ? business.ownerPhones[0] || ""
+      : "";
+
     reset({
       name: business.name || "",
       email: business.email || "",
@@ -118,9 +130,9 @@ export default function BusinessFormDialog({
         zipCode: business.address?.zipCode || "",
         country: business.address?.country || "",
       },
-      ownerName: business.ownerName || "",
-      ownerEmail: business.ownerEmail || "",
-      ownerPhone: business.ownerPhone || "",
+      ownerName: existingOwnerName,
+      ownerEmail: existingOwnerEmail,
+      ownerPhone: existingOwnerPhone,
     });
   }, [business, reset]);
 
@@ -131,7 +143,7 @@ export default function BusinessFormDialog({
       const bizId = business?.id || uuidv4();
       const isEdit = Boolean(business);
 
-      // 2) If ownerEmail provided, look up that user’s UID (ownerId).
+      // 2) If ownerEmail provided, look up that user’s UID
       //    If not found, create a placeholder user with role "business".
       let ownerId: string | undefined;
       if (data.ownerEmail?.trim()) {
@@ -153,8 +165,9 @@ export default function BusinessFormDialog({
             firstName: data.ownerName?.trim() || "",
             lastName: "",
             roles: ["business"],
-            ownedBusinessIds: [],
-            memberBusinessIds: [],
+            // We no longer maintain ownedBusinessIds/memberBusinessIds here:
+            // ownedBusinessIds: [],
+            // memberBusinessIds: [],
             ownedLocationIds: [],
             adminLocationIds: [],
             providerLocationIds: [],
@@ -189,39 +202,38 @@ export default function BusinessFormDialog({
         payload.address = addressPayload;
       }
 
-      // Owner info
-      if (data.ownerName?.trim()) payload.ownerName = data.ownerName.trim();
-      if (data.ownerEmail?.trim()) payload.ownerEmail = data.ownerEmail.trim();
-      if (data.ownerPhone?.trim()) payload.ownerPhone = data.ownerPhone.trim();
+      // 4) Owner fields → wrap into arrays
       if (ownerId) {
-        payload.ownerId = ownerId;
+        payload.ownerIds = [ownerId];
+      }
+      if (data.ownerEmail?.trim()) {
+        payload.ownerEmails = [data.ownerEmail.trim()];
+      }
+      if (data.ownerName?.trim()) {
+        payload.ownerNames = [data.ownerName.trim()];
+      }
+      if (data.ownerPhone?.trim()) {
+        payload.ownerPhones = [data.ownerPhone.trim()];
       }
 
       if (!isEdit) {
         payload.createdAt = serverTimestamp();
       }
 
-      // 4) Deep‐clean out any remaining undefined values
+      // 5) Deep‐clean out any remaining undefined values
       const cleanedPayload = deepCleanObject(payload);
 
-      // 5) Write directly to Firestore
+      // 6) Write directly to Firestore
       if (isEdit) {
         await updateDoc(doc(db, "businesses", bizId), cleanedPayload);
       } else {
         await setDoc(doc(db, "businesses", bizId), cleanedPayload);
       }
 
-      // 6) If we found or created an ownerId, patch that user’s doc to include this business
-      if (ownerId) {
-        const userRef = doc(db, "users", ownerId);
-        await updateDoc(userRef, {
-          roles: arrayUnion("business"),
-          ownedBusinessIds: arrayUnion(bizId),
-          updatedAt: serverTimestamp(),
-        });
-      }
+      // 7) We no longer update user.ownedBusinessIds here.
+      //    Ownership is determined by business.ownerIds in queries and security rules.
 
-      // 7) Callback to parent & close
+      // 8) Callback to parent & close
       onSaved();
     } catch (err: any) {
       console.error("Error saving business:", err);
@@ -239,9 +251,11 @@ export default function BusinessFormDialog({
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogContent>
             <Grid container spacing={2} mt={1}>
-              {/* 
-                BusinessForm internally uses `useFormContext()` and its own Controllers, 
-                so we simply render it here without passing `control` or `errors`. 
+              {/*
+                BusinessForm internally uses useFormContext() and its Controllers,
+                so we simply render it here without passing control or errors.
+                It should expose inputs for name, email, phone, website, status, notes,
+                address fields, plus ownerName, ownerEmail, ownerPhone as single fields.
               */}
               <BusinessForm />
             </Grid>
