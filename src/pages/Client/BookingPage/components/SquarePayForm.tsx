@@ -1,7 +1,14 @@
 // src/pages/Client/BookingPage/components/SquarePayForm.tsx
 
 import React, { useEffect, useRef, useState } from "react";
-import { CircularProgress, Box, Alert, Button } from "@mui/material";
+import {
+  CircularProgress,
+  Box,
+  Alert,
+  Button,
+  FormControlLabel,
+  Checkbox,
+} from "@mui/material";
 import { createPayment } from "../../../../api/createPayment";
 
 /**
@@ -76,9 +83,10 @@ export default function SquarePayForm({
   onSuccess,
   onCancel,
 }: Props) {
-  const [error,        setError]        = useState<string | null>(null);
-  const [initialising, setInitialising] = useState(true);
-  const [paying,       setPaying]       = useState(false);
+  const [error,               setError]               = useState<string | null>(null);
+  const [initialising,        setInitialising]        = useState(true);
+  const [paying,              setPaying]              = useState(false);
+  const [saveCardOnFile,      setSaveCardOnFile]      = useState(false);
 
   /** Live Square objects */
   const paymentsRef = useRef<any>(null);
@@ -172,14 +180,15 @@ export default function SquarePayForm({
       const { token, status } = await cardRef.current.tokenize();
       if (status !== "OK") throw new Error("Card tokenisation failed");
 
-      // Call our backend to create a payment
+      // Call our backend to create a payment (including saveCardOnFile flag)
       const resp: CreatePaymentResponse = await createPayment({
-        appointmentId,     // ← Include the appointmentId now
+        appointmentId,     // ← Include the appointmentId
         ownerType:        "serviceLocation",
         ownerId:          serviceLocationId,
         appointmentTypeId,
         amountCents,
         nonce:            token,
+        saveCardOnFile,   // ← Pass the new boolean flag
       });
 
       if (!resp.success) {
@@ -228,6 +237,17 @@ export default function SquarePayForm({
         </Box>
       ) : (
         <>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={saveCardOnFile}
+                onChange={(e) => setSaveCardOnFile(e.target.checked)}
+              />
+            }
+            label="Save this card for future payments"
+            sx={{ mt: 2 }}
+          />
+
           <Button
             variant="contained"
             fullWidth
