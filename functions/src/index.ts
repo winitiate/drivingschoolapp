@@ -1,7 +1,7 @@
 // functions/src/index.ts
 
 import { initializeApp } from "firebase-admin/app";
-initializeApp();
+initializeApp();   // ← exactly one call here
 
 // ──────────────────────────────
 // Existing payment functions
@@ -19,8 +19,13 @@ export { onNewBusinessOwnerPending } from "./onboarding/onNewBusinessOwnerPendin
 export { onNewServiceLocationAdminPending } from "./onboarding/onNewServiceLocationAdminPending";
 
 // ──────────────────────────────
-// Subscription / Stripe endpoints
+// Stripe subscription endpoints
 // ──────────────────────────────
-// These live under functions/src/subscriptions/
-export { createSubscription } from "./subscriptions/createSubscription";
+export { createSubscriptionStripe } from "./subscriptions/createSubscriptionStripe";
 export { stripeWebhook } from "./subscriptions/stripeWebhook";
+
+// ──────────────────────────────
+// Square subscription endpoints
+// ──────────────────────────────
+export { createSubscriptionSquare } from "./subscriptions/createSubscriptionSquare";
+export { squareWebhook } from "./subscriptions/squareWebhook";
