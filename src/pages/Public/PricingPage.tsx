@@ -1,5 +1,3 @@
-// src/pages/Public/PricingPage.tsx
-
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Container,
@@ -16,13 +14,12 @@ import {
 import { useNavigate } from "react-router-dom";
 
 import type { SubscriptionPackage } from "../../models/SubscriptionPackage";
-import type { SubscriptionPackageStore } from "../../data/SubscriptionPackageStore";
+import { SubscriptionPackageStore } from "../../data/SubscriptionPackageStore";
 import { FirestoreSubscriptionPackageStore } from "../../data/FirestoreSubscriptionPackageStore";
 
 export default function PricingPage() {
   const navigate = useNavigate();
 
-  // instantiate store once
   const pkgStore: SubscriptionPackageStore = useMemo(
     () => new FirestoreSubscriptionPackageStore(),
     []
@@ -33,30 +30,26 @@ export default function PricingPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadPlans() {
+    let canceled = false;
+    (async () => {
       setLoading(true);
       setError(null);
       try {
-        const activePlans = await pkgStore.listAllActive();
-        if (!cancelled) {
-          setPlans(activePlans);
+        const all = await pkgStore.listAllActive();
+        if (!canceled) {
+          // filter out hidden ones
+          setPlans(all.filter((p) => p.visible));
         }
       } catch (e: any) {
-        if (!cancelled) {
+        if (!canceled) {
           setError(e.message || "Failed to load plans");
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!canceled) setLoading(false);
       }
-    }
-
-    loadPlans();
+    })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [pkgStore]);
 
@@ -67,7 +60,6 @@ export default function PricingPage() {
       </Box>
     );
   }
-
   if (error) {
     return (
       <Container maxWidth="sm" sx={{ mt: 4 }}>
@@ -111,7 +103,6 @@ export default function PricingPage() {
                 >
                   {plan.description || "—"}
                 </Typography>
-
                 <Typography
                   variant="h3"
                   sx={{ fontWeight: 500, lineHeight: 1, my: 2 }}
@@ -125,7 +116,6 @@ export default function PricingPage() {
                     / month
                   </Typography>
                 </Typography>
-
                 <Typography>
                   Max Locations: {plan.maxLocations ?? "Unlimited"}
                 </Typography>
@@ -138,17 +128,25 @@ export default function PricingPage() {
               </CardContent>
 
               <CardActions sx={{ p: 2 }}>
-                <Button
-                  variant="contained"
-                  fullWidth
-                  onClick={() =>
-                    navigate("/business/sign-up", {
-                      state: { planId: plan.id },
-                    })
-                  }
-                >
-                  Get Started
-                </Button>
+                {plan.callToAction === "contact" ? (
+                  <Button
+                    variant="outlined"
+                    fullWidth
+                    onClick={() => navigate("/contact")}
+                  >
+                    Contact for a Quote
+                  </Button>
+                ) : (
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={() =>
+                      navigate("/business/sign-up", { state: { planId: plan.id } })
+                    }
+                  >
+                    Get Started
+                  </Button>
+                )}
               </CardActions>
             </Card>
           </Grid>

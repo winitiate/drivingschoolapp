@@ -1,5 +1,3 @@
-// src/data/FirestoreSubscriptionPackageStore.ts
-
 import {
   getFirestore,
   collection,
@@ -15,26 +13,20 @@ import {
   DocumentReference,
   QueryDocumentSnapshot,
 } from "firebase/firestore";
-import type { SubscriptionPackage } from "../models/SubscriptionPackage";
-import type { SubscriptionPackageStore } from "./SubscriptionPackageStore";
+import { SubscriptionPackage } from "../models/SubscriptionPackage";
+import { SubscriptionPackageStore } from "./SubscriptionPackageStore";
 
 const COLLECTION_NAME = "subscriptionPackages";
 
-export class FirestoreSubscriptionPackageStore
-  implements SubscriptionPackageStore
-{
+export class FirestoreSubscriptionPackageStore implements SubscriptionPackageStore {
   private db = getFirestore();
-  private collRef: CollectionReference = collection(
-    this.db,
-    COLLECTION_NAME
-  );
+  private collRef: CollectionReference = collection(this.db, COLLECTION_NAME);
 
-  private docToEntity(
-    snap: QueryDocumentSnapshot
-  ): SubscriptionPackage {
-    const data = snap.data() as any;
+  /** Convert Firestore doc → SubscriptionPackage */
+  private docToEntity(docSnap: QueryDocumentSnapshot): SubscriptionPackage {
+    const data = docSnap.data() as any;
     return {
-      id: snap.id,
+      id: docSnap.id,
       title: data.title,
       description: data.description ?? "",
       priceCents: data.priceCents,
@@ -42,6 +34,8 @@ export class FirestoreSubscriptionPackageStore
       maxProviders: data.maxProviders ?? null,
       maxClients: data.maxClients ?? null,
       order: data.order ?? 0,
+      visible: data.visible ?? true,
+      callToAction: data.callToAction ?? "register",
       createdAt: data.createdAt
         ? (data.createdAt as Timestamp).toDate()
         : undefined,
@@ -51,47 +45,36 @@ export class FirestoreSubscriptionPackageStore
     };
   }
 
-  /** Fetch a single package by ID. */
+  /** List all, ordered by `order` ascending */
+  async listAll(): Promise<SubscriptionPackage[]> {
+    const q = query(this.collRef, orderBy("order", "asc"));
+    const snaps = await getDocs(q);
+    return snaps.docs.map((d) => this.docToEntity(d));
+  }
+
+  /** Same as listAll, public pricing page will filter by visible flag */
+  async listAllActive(): Promise<SubscriptionPackage[]> {
+    return this.listAll();
+  }
+
+  /** Fetch one by ID */
   async getById(id: string): Promise<SubscriptionPackage | null> {
     if (!id) return null;
-    const ref: DocumentReference = doc(
-      this.db,
-      COLLECTION_NAME,
-      id
-    );
+    const ref: DocumentReference = doc(this.db, COLLECTION_NAME, id);
     const snap = await getDoc(ref);
     if (!snap.exists()) return null;
     return this.docToEntity(snap as QueryDocumentSnapshot);
   }
 
-  /** List all packages (no ordering). */
-  async listAll(): Promise<SubscriptionPackage[]> {
-    const snaps = await getDocs(this.collRef);
-    return snaps.docs.map((d) => this.docToEntity(d));
-  }
-
-  /** List only “active” packages ordered by `order` ascending. */
-  async listAllActive(): Promise<SubscriptionPackage[]> {
-    const q = query(
-      this.collRef,
-      orderBy("order", "asc")
-    );
-    const snaps = await getDocs(q);
-    return snaps.docs.map((d) => this.docToEntity(d));
-  }
-
-  /** Create or update a package. */
+  /** Save (create or update) */
   async save(pkg: SubscriptionPackage): Promise<void> {
-    let id = pkg.id;
-    if (!id) {
-      // generate new ID
-      id = doc(this.collRef).id;
+    if (!pkg) throw new Error("Attempt to save undefined package");
+
+    let docId = pkg.id;
+    if (!docId || !docId.trim()) {
+      docId = doc(this.collRef).id;
     }
-    const ref: DocumentReference = doc(
-      this.db,
-      COLLECTION_NAME,
-      id
-    );
+    const ref: DocumentReference = doc(this.db, COLLECTION_NAME, docId);
     const now = Timestamp.now();
 
     const payload: any = {
@@ -102,9 +85,10 @@ export class FirestoreSubscriptionPackageStore
       maxProviders: pkg.maxProviders ?? null,
       maxClients: pkg.maxClients ?? null,
       order: pkg.order ?? 0,
+      visible: pkg.visible ?? true,
+      callToAction: pkg.callToAction ?? "register",
       updatedAt: now,
     };
-
     if (!pkg.id) {
       payload.createdAt = now;
     }
@@ -112,9 +96,9 @@ export class FirestoreSubscriptionPackageStore
     await setDoc(ref, payload, { merge: true });
   }
 
-  /** Delete a package by ID. */
+  /** Delete by ID */
   async delete(id: string): Promise<void> {
-    if (!id) throw new Error("Invalid subscription-package ID");
+    if (!id) throw new Error("Invalid ID for deletion");
     await deleteDoc(doc(this.db, COLLECTION_NAME, id));
   }
 }

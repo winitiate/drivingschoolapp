@@ -32,6 +32,19 @@ export interface SubscriptionPackage {
    */
   order?: number;
 
+  /**
+   * Whether this package should appear on the public /pricing page.
+   * True = show; false = hide.
+   */
+  visible?: boolean;
+
+  /**
+   * Which call‐to‐action to show on /pricing:
+   *  - "register" → “Get Started”
+   *  - "contact"  → “Contact for a Quote”
+   */
+  callToAction?: "register" | "contact";
+
   /** Timestamps (populated by Firestore) */
   createdAt?: Date;
   updatedAt?: Date;

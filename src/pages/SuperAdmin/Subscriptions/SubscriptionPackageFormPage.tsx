@@ -10,6 +10,12 @@ import {
   Alert,
   Paper,
   Grid,
+  FormControlLabel,
+  Switch,
+  RadioGroup,
+  Radio,
+  FormLabel,
+  FormControl,
 } from "@mui/material";
 import { useForm, Controller } from "react-hook-form";
 import { useParams, useNavigate } from "react-router-dom";
@@ -22,7 +28,6 @@ import {
   serverTimestamp,
   DocumentData,
 } from "firebase/firestore";
-import type { SubscriptionPackage } from "../../../models/SubscriptionPackage";
 
 interface FormValues {
   title: string;
@@ -31,13 +36,14 @@ interface FormValues {
   maxLocations: string;
   maxProviders: string;
   maxClients: string;
+  visible: boolean;
+  callToAction: "register" | "contact";
 }
 
 export default function SubscriptionPackageFormPage() {
   const { id: pkgId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const db = getFirestore();
-  const collRef = collection(db, "subscriptionPackages");
 
   const [loading, setLoading] = useState<boolean>(!!pkgId);
   const [saving, setSaving] = useState<boolean>(false);
@@ -56,21 +62,25 @@ export default function SubscriptionPackageFormPage() {
       maxLocations: "",
       maxProviders: "",
       maxClients: "",
+      visible: true,
+      callToAction: "register",
     },
   });
 
-  // Load existing package if editing
   useEffect(() => {
     if (!pkgId) {
       setLoading(false);
       return;
     }
+
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const ref = doc(collRef, pkgId);
-        const snap = await getDoc(ref);
+        // define collRef inside effect so it doesn't recreate each render
+        const collRef = collection(db, "subscriptionPackages");
+        const docRef = doc(collRef, pkgId);
+        const snap = await getDoc(docRef);
         if (!snap.exists()) {
           setError("Subscription package not found.");
           setLoading(false);
@@ -80,84 +90,77 @@ export default function SubscriptionPackageFormPage() {
         reset({
           title: data.title || "",
           description: data.description || "",
-          priceDollars: (data.priceCents / 100).toFixed(2),
-          maxLocations: (data.maxLocations ?? 0).toString(),
-          maxProviders: (data.maxProviders ?? 0).toString(),
-          maxClients:
-            data.maxClients != null ? data.maxClients.toString() : "",
+          priceDollars: ((data.priceCents ?? 0) / 100).toFixed(2),
+          maxLocations: (data.maxLocations ?? "").toString(),
+          maxProviders: (data.maxProviders ?? "").toString(),
+          maxClients: (data.maxClients ?? "").toString(),
+          visible: data.visible ?? true,
+          callToAction: data.callToAction ?? "register",
         });
-      } catch (err: any) {
-        console.error("Error loading package:", err);
-        setError(err.message || "Failed to load subscription package.");
+      } catch (e: any) {
+        console.error(e);
+        setError(e.message || "Failed to load package");
       } finally {
         setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pkgId]);
+    // only rerun when pkgId, db, or reset change
+  }, [pkgId, db, reset]);
 
-  const onSubmit = async (form: FormValues) => {
+  const onSubmit = async (vals: FormValues) => {
     setSaving(true);
     setError(null);
-
     try {
-      // Convert & validate price
-      const price = parseFloat(form.priceDollars);
-      if (isNaN(price) || price < 0) {
-        throw new Error("Price must be a non-negative number.");
-      }
+      // parse & validate
+      const price = parseFloat(vals.priceDollars);
+      if (isNaN(price) || price < 0)
+        throw new Error("Price must be a non-negative number");
       const priceCents = Math.round(price * 100);
 
-      // Convert & validate limits
-      const maxLoc = parseInt(form.maxLocations, 10);
-      if (isNaN(maxLoc) || maxLoc < 0) {
-        throw new Error("Max Locations must be non-negative integer.");
-      }
-      const maxProv = parseInt(form.maxProviders, 10);
-      if (isNaN(maxProv) || maxProv < 0) {
-        throw new Error("Max Providers must be non-negative integer.");
-      }
+      const maxLoc = parseInt(vals.maxLocations, 10);
+      const maxProv = parseInt(vals.maxProviders, 10);
+      if (isNaN(maxLoc) || maxLoc < 0)
+        throw new Error("Max Locations must be a non-negative integer");
+      if (isNaN(maxProv) || maxProv < 0)
+        throw new Error("Max Providers must be a non-negative integer");
 
       let maxCl: number | null = null;
-      if (form.maxClients.trim() !== "") {
-        const val = parseInt(form.maxClients, 10);
-        if (isNaN(val) || val < 0) {
-          throw new Error("Max Clients must be non-negative integer.");
-        }
-        maxCl = val;
+      if (vals.maxClients.trim()) {
+        const c = parseInt(vals.maxClients, 10);
+        if (isNaN(c) || c < 0)
+          throw new Error("Max Clients must be a non-negative integer");
+        maxCl = c;
       }
 
-      // Build payload
+      // build payload
       const payload: any = {
-        title: form.title.trim(),
-        description: form.description.trim(),
+        title: vals.title.trim(),
+        description: vals.description.trim(),
         priceCents,
         maxLocations: maxLoc,
         maxProviders: maxProv,
+        maxClients: maxCl,
+        visible: vals.visible,
+        callToAction: vals.callToAction,
         updatedAt: serverTimestamp(),
       };
-      if (maxCl !== null) payload.maxClients = maxCl;
-      if (!pkgId) payload.createdAt = serverTimestamp();
+      if (!pkgId) {
+        payload.createdAt = serverTimestamp();
+      }
 
-      // Determine docRef
-      const docRef = pkgId
-        ? doc(collRef, pkgId)
-        : doc(collRef); // new auto-ID
+      // docRef
+      const collRef = collection(db, "subscriptionPackages");
+      const docRef = pkgId ? doc(collRef, pkgId) : doc(collRef);
 
       await setDoc(docRef, payload, { merge: true });
       navigate("/super-admin/subscription-packages");
-    } catch (err: any) {
-      console.error("Error saving package:", err);
-      setError(err.message || "Failed to save subscription package.");
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || "Save failed");
       setSaving(false);
     }
   };
 
-  const handleCancel = () => {
-    navigate("/super-admin/subscription-packages");
-  };
-
-  // Loading spinner
   if (loading) {
     return (
       <Box textAlign="center" mt={4}>
@@ -171,14 +174,12 @@ export default function SubscriptionPackageFormPage() {
       <Typography variant="h5" gutterBottom>
         {pkgId ? "Edit Subscription Package" : "New Subscription Package"}
       </Typography>
-
       <Paper sx={{ p: 3, mb: 2 }}>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
           </Alert>
         )}
-
         <form onSubmit={handleSubmit(onSubmit)} noValidate>
           <Controller
             name="title"
@@ -219,7 +220,7 @@ export default function SubscriptionPackageFormPage() {
             rules={{
               required: "Price is required",
               validate: (v) =>
-                !isNaN(parseFloat(v)) || "Price must be a number",
+                !isNaN(parseFloat(v)) || "Must be a number",
             }}
             render={({ field, fieldState }) => (
               <TextField
@@ -234,7 +235,7 @@ export default function SubscriptionPackageFormPage() {
             )}
           />
 
-          <Grid container spacing={2} sx={{ mt: 1 }}>
+          <Grid container spacing={2}>
             <Grid item xs={12} sm={4}>
               <Controller
                 name="maxLocations"
@@ -298,18 +299,55 @@ export default function SubscriptionPackageFormPage() {
             </Grid>
           </Grid>
 
+          <FormControlLabel
+            control={
+              <Controller
+                name="visible"
+                control={control}
+                render={({ field }) => (
+                  <Switch {...field} checked={field.value} />
+                )}
+              />
+            }
+            label="Visible on Pricing Page"
+          />
+
+          <FormControl component="fieldset" sx={{ mt: 2 }}>
+            <FormLabel component="legend">Call to Action</FormLabel>
+            <Controller
+              name="callToAction"
+              control={control}
+              render={({ field }) => (
+                <RadioGroup row {...field}>
+                  <FormControlLabel
+                    value="register"
+                    control={<Radio />}
+                    label="Register Now"
+                  />
+                  <FormControlLabel
+                    value="contact"
+                    control={<Radio />}
+                    label="Contact for a Quote"
+                  />
+                </RadioGroup>
+              )}
+            />
+          </FormControl>
+
           <Box sx={{ mt: 3, display: "flex", gap: 2 }}>
             <Button
               type="submit"
               variant="contained"
               disabled={saving}
-              startIcon={saving ? <CircularProgress size={20} /> : undefined}
+              startIcon={
+                saving ? <CircularProgress size={20} /> : undefined
+              }
             >
               {saving ? "Saving…" : "Save"}
             </Button>
             <Button
               variant="outlined"
-              onClick={handleCancel}
+              onClick={() => navigate("/super-admin/subscription-packages")}
               disabled={saving}
             >
               Cancel
