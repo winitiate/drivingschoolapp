@@ -1,27 +1,21 @@
 // src/App.tsx
 
-import React from "react"
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
-import { AuthProvider } from "./auth/useAuth"
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "./auth/useAuth";
 
-import ClientSignIn             from "./pages/Client/ClientSignIn"
-import { BusinessRoutes }       from "./routes/BusinessRoutes"
-import { ClientRoutes }         from "./routes/ClientRoutes"
-import { ServiceLocationRoutes} from "./routes/ServiceLocationRoutes"
-import { ServiceProviderRoutes} from "./routes/ServiceProviderRoutes"
-import { SuperAdminRoutes }     from "./routes/SuperAdminRoutes"
+import { LocalizationProvider } from "@mui/x-date-pickers";
+import { AdapterDayjs }         from "@mui/x-date-pickers/AdapterDayjs";
 
-import Homepage      from "./pages/Homepage"
-import About         from "./pages/About"
-import PublicLayout  from "./layouts/PublicLayout"
+import { ThemeProvider } from "@mui/material/styles";
+import { lightTheme }   from "./theme/lightTheme";
 
-// MUI Date-Pickers Localization
-import { LocalizationProvider } from "@mui/x-date-pickers"
-import { AdapterDayjs }         from "@mui/x-date-pickers/AdapterDayjs"
-
-// MUI theme imports
-import { ThemeProvider } from "@mui/material/styles"
-import { lightTheme }   from "./theme/lightTheme" // named export
+import { PublicRoutes }         from "./routes/PublicRoutes";
+import { BusinessRoutes }       from "./routes/BusinessRoutes";
+import { ClientRoutes }         from "./routes/ClientRoutes";
+import { ServiceLocationRoutes} from "./routes/ServiceLocationRoutes";
+import { ServiceProviderRoutes} from "./routes/ServiceProviderRoutes";
+import { SuperAdminRoutes }     from "./routes/SuperAdminRoutes";
 
 export default function App() {
   return (
@@ -30,38 +24,22 @@ export default function App() {
         <BrowserRouter>
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <Routes>
-              {/* Public client sign-in */}
-              <Route path="sign-in" element={<ClientSignIn />} />
+              {/* all truly public pages */}
+              {PublicRoutes}
 
-              {/* Protected & nested routes */}
+              {/* all protected, nested route groups */}
               {BusinessRoutes}
               {ClientRoutes}
               {ServiceLocationRoutes}
               {ServiceProviderRoutes}
               {SuperAdminRoutes}
 
-              {/* Public Home, About & Fallback */}
-              <Route
-                path="/"
-                element={
-                  <PublicLayout>
-                    <Homepage />
-                  </PublicLayout>
-                }
-              />
-              <Route
-                path="/about"
-                element={
-                  <PublicLayout>
-                    <About />
-                  </PublicLayout>
-                }
-              />
+              {/* fallback */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </LocalizationProvider>
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>
-  )
+  );
 }

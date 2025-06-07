@@ -1,7 +1,8 @@
-// src\pages\SuperAdmin\BusinessOnboardingSettingsPage.tsx
+// src/pages/SuperAdmin/BusinessOnboardingSettingsPage.tsx
 
 import React, { useState, useEffect } from "react";
 import {
+  Container,
   Box,
   Typography,
   Switch,
@@ -88,20 +89,25 @@ export default function BusinessOnboardingSettingsPage() {
   // If still loading from Firestore, show a centered spinner
   if (loading) {
     return (
-      <Box textAlign="center" mt={4}>
+      <Box textAlign="center" mt={8}>
         <CircularProgress />
       </Box>
     );
   }
 
-  // 3) Once loaded, render the toggle + save button:
   return (
-    <Box sx={{ p: 3 }}>
+    <Container maxWidth="sm" sx={{ mt: 4, mb: 6 }}>
       <Typography variant="h5" gutterBottom>
         Business Onboarding Settings
       </Typography>
 
-      <Paper sx={{ p: 2, mb: 2 }}>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      <Paper sx={{ p: 2, mb: 3 }}>
         <Box display="flex" alignItems="center">
           <Typography variant="body1" sx={{ mr: 2 }}>
             Allow business owners to self-register:
@@ -114,19 +120,15 @@ export default function BusinessOnboardingSettingsPage() {
         </Box>
       </Paper>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-
-      <Button
-        variant="contained"
-        onClick={handleSave}
-        disabled={saving}
-      >
-        {saving ? <CircularProgress size={20} /> : "Save Changes"}
-      </Button>
-    </Box>
+      <Box sx={{ textAlign: "left" }}>
+        <Button
+          variant="contained"
+          onClick={handleSave}
+          disabled={saving}
+        >
+          {saving ? <CircularProgress size={20} /> : "Save Changes"}
+        </Button>
+      </Box>
+    </Container>
   );
 }

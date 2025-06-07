@@ -1,11 +1,13 @@
 // src/pages/Public/PricingPage.tsx
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
-  Box,
+  Container,
   Grid,
+  Box,
   Card,
   CardContent,
+  CardActions,
   Typography,
   Button,
   CircularProgress,
@@ -13,33 +15,49 @@ import {
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
-import type { ServicePackage } from "../../models/ServicePackage";
-import type { ServicePackageStore } from "../../data/ServicePackageStore";
-import { FirestoreServicePackageStore } from "../../data/FirestoreServicePackageStore";
+import type { SubscriptionPackage } from "../../models/SubscriptionPackage";
+import type { SubscriptionPackageStore } from "../../data/SubscriptionPackageStore";
+import { FirestoreSubscriptionPackageStore } from "../../data/FirestoreSubscriptionPackageStore";
 
 export default function PricingPage() {
   const navigate = useNavigate();
 
-  // Use the interface type, assign a Firestore‐based implementation
-  const pkgStore: ServicePackageStore = new FirestoreServicePackageStore();
+  // instantiate store once
+  const pkgStore: SubscriptionPackageStore = useMemo(
+    () => new FirestoreSubscriptionPackageStore(),
+    []
+  );
 
-  const [plans, setPlans] = useState<ServicePackage[]>([]);
+  const [plans, setPlans] = useState<SubscriptionPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+
+    async function loadPlans() {
       setLoading(true);
       setError(null);
       try {
         const activePlans = await pkgStore.listAllActive();
-        setPlans(activePlans);
+        if (!cancelled) {
+          setPlans(activePlans);
+        }
       } catch (e: any) {
-        setError(e.message || "Failed to load plans");
+        if (!cancelled) {
+          setError(e.message || "Failed to load plans");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    })();
+    }
+
+    loadPlans();
+    return () => {
+      cancelled = true;
+    };
   }, [pkgStore]);
 
   if (loading) {
@@ -51,55 +69,91 @@ export default function PricingPage() {
   }
 
   if (error) {
-    return <Alert severity="error">{error}</Alert>;
+    return (
+      <Container maxWidth="sm" sx={{ mt: 4 }}>
+        <Alert severity="error">{error}</Alert>
+      </Container>
+    );
   }
 
   return (
-    <Box p={4}>
-      <Typography variant="h4" gutterBottom>
-        Choose Your Plan
+    <Container maxWidth="lg" sx={{ py: 6 }}>
+      <Typography variant="h4" align="center" gutterBottom>
+        Choose Your Monthly Plan
       </Typography>
-      <Grid container spacing={4}>
+
+      <Grid container spacing={4} justifyContent="center">
+        {plans.length === 0 && (
+          <Grid item xs={12}>
+            <Typography align="center">No plans available.</Typography>
+          </Grid>
+        )}
+
         {plans.map((plan) => (
-          <Grid item xs={12} sm={6} md={4} key={plan.id}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="h6">{plan.name}</Typography>
-                <Typography variant="subtitle1" color="textSecondary">
-                  {plan.description}
+          <Grid item xs={12} md={4} key={plan.id}>
+            <Card
+              variant="outlined"
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                height: "100%",
+                width: "100%",
+              }}
+            >
+              <CardContent sx={{ flexGrow: 1 }}>
+                <Typography variant="h6" gutterBottom>
+                  {plan.title}
                 </Typography>
-                <Typography variant="h5" sx={{ my: 2 }}>
-                  ${(plan.priceCents / 100).toFixed(2)} / {plan.interval}
+                <Typography
+                  variant="subtitle1"
+                  color="textSecondary"
+                  gutterBottom
+                >
+                  {plan.description || "—"}
                 </Typography>
-                <Box>
-                  <Typography>
-                    Max Locations:{" "}
-                    {plan.maxLocations == null ? "Unlimited" : plan.maxLocations}
+
+                <Typography
+                  variant="h3"
+                  sx={{ fontWeight: 500, lineHeight: 1, my: 2 }}
+                >
+                  ${(plan.priceCents / 100).toFixed(2)}{" "}
+                  <Typography
+                    component="span"
+                    variant="subtitle2"
+                    color="textSecondary"
+                  >
+                    / month
                   </Typography>
-                  <Typography>
-                    Max Providers:{" "}
-                    {plan.maxProviders == null ? "Unlimited" : plan.maxProviders}
-                  </Typography>
-                  <Typography>
-                    Max Clients:{" "}
-                    {plan.maxClients == null ? "Unlimited" : plan.maxClients}
-                  </Typography>
-                </Box>
+                </Typography>
+
+                <Typography>
+                  Max Locations: {plan.maxLocations ?? "Unlimited"}
+                </Typography>
+                <Typography>
+                  Max Providers: {plan.maxProviders ?? "Unlimited"}
+                </Typography>
+                <Typography>
+                  Max Clients: {plan.maxClients ?? "Unlimited"}
+                </Typography>
+              </CardContent>
+
+              <CardActions sx={{ p: 2 }}>
                 <Button
                   variant="contained"
                   fullWidth
-                  sx={{ mt: 2 }}
                   onClick={() =>
-                    navigate("/business/signup", { state: { planId: plan.id } })
+                    navigate("/business/sign-up", {
+                      state: { planId: plan.id },
+                    })
                   }
                 >
                   Get Started
                 </Button>
-              </CardContent>
+              </CardActions>
             </Card>
           </Grid>
         ))}
       </Grid>
-    </Box>
+    </Container>
   );
 }

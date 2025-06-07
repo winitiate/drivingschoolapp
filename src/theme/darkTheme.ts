@@ -1,4 +1,5 @@
 import { createTheme } from '@mui/material/styles';
+import typography from './typography';
 
 export const darkTheme = createTheme({
   palette: {
@@ -6,11 +7,12 @@ export const darkTheme = createTheme({
     primary:   { main: '#2563eb' },
     secondary: { main: '#d97706' },
     background: {
-      default: '#1f2937',                  // roughly mytheme “base-content”
+      default: '#1f2937',
       paper:   '#333333',
     },
     text: {
-      primary: '#f9fafb',                  // mytheme “base-100”
+      primary: '#f9fafb',
     },
   },
+  typography,
 });

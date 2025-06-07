@@ -1,68 +1,120 @@
 // src/pages/SuperAdmin/SuperAdminDashboard.tsx
 
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  Container, 
-  Typography, 
-  Button, 
-  Box 
+import React, { useState } from 'react';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import {
+  Box,
+  Typography,
+  Button,
+  Grid,
+  Card,
+  CardContent,
+  Container,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
 import { useAuth } from '../../auth/useAuth';
 
+/**
+ * SuperAdminDashboard
+ *
+ * Renders a card‐based dashboard with links to:
+ * - Businesses
+ * - Onboarding settings
+ * - Subscription Packages
+ * - Payment settings
+ * - Form templates
+ */
 export default function SuperAdminDashboard() {
-  const { user, signOutUser } = useAuth();
+  const { user, loading: authLoading, signOutUser } = useAuth();
   const navigate = useNavigate();
 
-  const handleManageBusinesses = () => {
-    navigate('/super-admin/businesses');
-  };
-
-  const handleOnboardingSettings = () => {
-    navigate('/super-admin/business-onboarding');
-  };
+  const [error, setError] = useState<string | null>(null);
 
   const handleSignOut = async () => {
-    await signOutUser();
-    navigate('/', { replace: true });
+    try {
+      await signOutUser();
+      navigate('/', { replace: true });
+    } catch (e: any) {
+      setError(e.message || 'Failed to sign out');
+    }
   };
 
+  // label + destination for each dashboard card
+  const sections: Array<[string, string]> = [
+    ['Manage Businesses',          '/super-admin/businesses'],
+    ['Business Onboarding Settings','/super-admin/business-onboarding'],
+    ['Subscription Packages',      '/super-admin/subscription-packages'],
+    ['Payment Settings',           '/super-admin/payment-settings'],
+    ['Form Templates',             '/super-admin/form-templates'],
+  ];
+
+  if (authLoading) {
+    return (
+      <Box textAlign="center" mt={4}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return (
-    <Container maxWidth="sm" sx={{ mt: 6, textAlign: 'center' }}>
-      {/* Main title */}
-      <Typography variant="h4" gutterBottom>
+    <Container
+      component="main"
+      sx={{ flex: 1, p: 3, maxWidth: 800, mx: 'auto' }}
+    >
+      <Typography variant="h5" gutterBottom>
         Platform Admin Dashboard
       </Typography>
 
-      {/* Logged‐in user’s email */}
       {user?.email && (
-        <Typography variant="subtitle1" color="textSecondary" gutterBottom>
-          Welcome, {user.email}
+        <Typography
+          variant="subtitle1"
+          color="textSecondary"
+          gutterBottom
+        >
+          Signed in as: {user.email}
         </Typography>
       )}
 
-      {/* Action buttons */}
-      <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'center' }}>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={handleManageBusinesses}
-        >
-          Manage Businesses
-        </Button>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
 
-        <Button
-          variant="contained"
-          color="secondary"
-          onClick={handleOnboardingSettings}
-        >
-          Business Onboarding Settings
-        </Button>
+      <Box sx={{ mt: 2 }}>
+        <Grid container spacing={2} direction="column">
+          {sections.map(([label, to]) => (
+            <Grid item xs={12} key={label}>
+              <Card>
+                <CardContent
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Typography variant="h6">{label}</Typography>
+                  <Button
+                    component={RouterLink}
+                    to={to}
+                    variant="outlined"
+                  >
+                    Manage
+                  </Button>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
       </Box>
 
-      {/* Sign out */}
-      <Box sx={{ mt: 4 }}>
-        <Button variant="outlined" onClick={handleSignOut}>
+      <Box sx={{ mt: 4, textAlign: 'center' }}>
+        <Button
+          variant="outlined"
+          color="secondary"
+          onClick={handleSignOut}
+        >
           Sign Out
         </Button>
       </Box>

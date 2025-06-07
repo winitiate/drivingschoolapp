@@ -5,16 +5,14 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../../auth/useAuth';
 import { Box, CircularProgress } from '@mui/material';
 
-interface Props {
-  redirectPath?: string;
-}
-
-export default function ProtectedSuperAdminRoute({
-  redirectPath = '/super-admin/sign-in',
-}: Props) {
+export default function ProtectedSuperAdminRoute({ redirectPath = '/super-admin/sign-in' }) {
   const { user, loading } = useAuth();
 
-  // While we’re checking auth, show a spinner
+  React.useEffect(() => {
+    console.log('[ProtectedRoute] loading:', loading, 'user:', user);
+    console.log('[ProtectedRoute] roles:', user?.roles);
+  }, [loading, user]);
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
@@ -23,11 +21,10 @@ export default function ProtectedSuperAdminRoute({
     );
   }
 
-  // Not signed in or not a superAdmin → redirect to absolute path "/super-admin/sign-in"
-  if (!user || !user.roles.includes('superAdmin')) {
+  // If user is null or not a superAdmin, redirect.
+  if (!user || !Array.isArray(user.roles) || !user.roles.includes('superAdmin')) {
     return <Navigate to={redirectPath} replace />;
   }
 
-  // Otherwise, render nested routes
   return <Outlet />;
 }

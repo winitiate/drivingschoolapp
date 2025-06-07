@@ -48,9 +48,9 @@ export default function BookingPage() {
   const { user }      = useAuth();
   const navigate      = useNavigate();
 
-  // Redirect if not authenticated
+  // ─── Redirect if not authenticated ───────────────────────────────────────────
   if (!user) return <Navigate to="/sign-in" replace />;
-  // Redirect if no valid location or user not authorized
+  // ─── Redirect if no valid location or user not authorized ────────────────────
   if (!locId || !user.clientLocationIds?.includes(locId))
     return <Navigate to="/" replace />;
 
@@ -141,7 +141,7 @@ export default function BookingPage() {
     }
   }, [availLoading, availabilities, providers, apptsByDate, selectedProvider, selectedDate, next30]);
 
-  // Re-introduce firstAvail so DateSelector can use it
+  // Re‐introduce firstAvail so DateSelector can use it
   const firstAvail = availableDates[0] ?? null;
 
   useEffect(() => {
@@ -187,7 +187,7 @@ export default function BookingPage() {
     setConfirmOpen(true);
   };
 
-  /* save appointment helper */
+  /* ───────── save appointment helper ───────── */
   // Accepts an explicit ID to use (so we can save with a pending ID after payment)
   const saveAppointmentWithId = async (appointmentId: string): Promise<void> => {
     if (!selectedDate || !selectedSlot) return;
@@ -197,8 +197,10 @@ export default function BookingPage() {
     const endDT    = dayjs(`${iso}T${selectedSlot.end}`);
     const duration = endDT.diff(startDT, "minute");
 
+    // *** INCLUDE clientId: user.uid so Firestore rules allow creation ***
     const payload: Appointment = {
       id:                 appointmentId,
+      clientId:           user.uid,               // ← MUST match the rule
       appointmentTypeId:  selectedType,
       clientIds:          [user.uid],
       serviceProviderIds: [selectedSlotProviderId ?? ""],
@@ -283,7 +285,7 @@ export default function BookingPage() {
       tenderType:    "card",
       transactionId: paymentResult.transactionId,
       paymentStatus: "paid",
-      receiptUrl:    paymentResult.receiptUrl || "", // default to empty string
+      receiptUrl:    paymentResult.receiptUrl || "",
       processedAt:   now,
 
       // New field indicating gateway
@@ -369,13 +371,17 @@ export default function BookingPage() {
           onClose={() => setConfirmOpen(false)}
           onConfirm={onConfirm}
           clientName={`${user.firstName} ${user.lastName}`}
-          typeTitle={types.find((t) => t.id === selectedType)?.title || ""}
+          typeTitle={
+            types.find((t) => t.id === selectedType)?.title || ""
+          }
           providerName={
             selectedSlotProviderId
-              ? providers.find((p) => p.id === selectedSlotProviderId)?.name || ""
+              ? providers.find((p) => p.id === selectedSlotProviderId)?.name ||
+                ""
               : selectedProvider === "any"
               ? "(Any)"
-              : providers.find((p) => p.id === selectedProvider)?.name || ""
+              : providers.find((p) => p.id === selectedProvider)?.name ||
+                ""
           }
           selectedDate={selectedDate}
           selectedSlot={selectedSlot}
@@ -388,7 +394,7 @@ export default function BookingPage() {
           onClose={() => setPayOpen(false)}
           maxWidth="sm"
           fullWidth
-          keepMounted={false}   // unmounts dialog each close to avoid duplicate card iframes
+          keepMounted={false}   // unmounts dialog each close to avoid duplicate iframes
         >
           <Box sx={{ p: 3 }}>
             {squareAppId ? (
