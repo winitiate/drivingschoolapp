@@ -1,29 +1,5 @@
 // src/pages/Client/ClientDashboard.tsx
 
-/**
- * ClientDashboard.tsx
- *
- * Displays all appointments for the current client at a given service location.
- * The client’s UID must appear in each appointment’s `clientIds[]`, and the
- * appointment’s `serviceLocationId` must match `locId`.
- *
- * We require Firestore rules to allow:
- *   • Read appointments when serviceLocationId ∈ me().clientLocationIds.
- *   • Read serviceProviders when any providerLocationIds ∈ me().clientLocationIds.
- *   • Read appointmentTypes when locationId ∈ me().clientLocationIds.
- *
- * Accordingly, we:
- *   - Query appointments with two filters (one on serviceLocationId, one on clientIds),
- *     so we only fetch allowed docs.
- *   - Query serviceProviders via `where("providerLocationIds", "array-contains", locId)`.
- *   - Query appointmentTypes via `where("locationId", "==", locId)`.
- *
- * We then “enrich” each appointment to display:
- *   - clientName  (the current user’s name, from `user`)
- *   - providerName(s) (fetched from serviceProviders’ own `firstName`/`lastName` fields)
- *   - appointmentTypeName (from the appointmentTypes documents)
- */
-
 import React, {
   useState,
   useEffect,
@@ -43,6 +19,7 @@ import {
   CircularProgress,
   Alert,
   Container,
+  Divider,
 } from "@mui/material";
 
 import { useAuth } from "../../auth/useAuth";
@@ -52,14 +29,15 @@ import AppointmentFormDialog from "../../components/Appointments/AppointmentForm
 import { FirestoreAppointmentStore } from "../../data/FirestoreAppointmentStore";
 import { FirestoreServiceProviderStore } from "../../data/FirestoreServiceProviderStore";
 import { FirestoreAppointmentTypeStore } from "../../data/FirestoreAppointmentTypeStore";
+import { appointmentStore } from "../../data";
 
-import { appointmentStore } from "../../data"; // for save/delete
 import {
   getFirestore,
   collection,
   query,
   where,
   getDocs,
+  Timestamp,
 } from "firebase/firestore";
 
 import type { Appointment } from "../../models/Appointment";
@@ -83,21 +61,22 @@ export default function ClientDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Enriched appointments array
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [enrichedAppointments, setEnriched] = useState<any[]>([]);
-
-  // We’ll hold two maps:
-  //   provMap: providerId → “First Last”
-  //   typeMap: typeId → title
+  // Maps for provider names and type titles
   const [provMap, setProvMap] = useState<Record<string, string>>({});
   const [typeMap, setTypeMap] = useState<Record<string, string>>({});
 
+  // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Appointment | null>(null);
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // 1) Load & Enrich Appointments
-  // ──────────────────────────────────────────────────────────────────────────
+  /**
+   * 1) Load & enrich appointments:
+   *    • convert Timestamps → Date
+   *    • fetch provider names
+   *    • fetch appointmentType titles
+   */
   const loadAppointments = useCallback(async () => {
     if (!user?.uid || !locId) return;
 
@@ -105,74 +84,65 @@ export default function ClientDashboard() {
     setError(null);
 
     try {
-      // A) Query appointments where:
-      //    - serviceLocationId == locId
-      //    - clientIds array contains user.uid
+      // A) Query the raw appointments
       const apptQuery = query(
         collection(db, "appointments"),
         where("serviceLocationId", "==", locId),
         where("clientIds", "array-contains", user.uid)
       );
       const apptSnap = await getDocs(apptQuery);
-      const mine: Appointment[] = apptSnap.docs.map((snap) => {
-        const data = snap.data() as Appointment;
-        return { id: snap.id, ...data };
+
+      // B) Convert each doc, turning Timestamps into JS Dates
+      const rawList: Appointment[] = apptSnap.docs.map((snap) => {
+        const data = snap.data() as any;
+        const maybeTs = (v: any) =>
+          v instanceof Timestamp ? v.toDate() : v;
+        return {
+          id: snap.id,
+          ...data,
+          startTime: maybeTs(data.startTime),
+          endTime: maybeTs(data.endTime),
+        } as Appointment;
       });
 
-      // B) Query all providers serving this location
-      //    Clients are allowed if serviceProviders.providerLocationIds contains locId
+      // C) Fetch provider names
       const provQuery = query(
         collection(db, "serviceProviders"),
         where("providerLocationIds", "array-contains", locId)
       );
       const provSnap = await getDocs(provQuery);
-      const providers = provSnap.docs.map((snap) => {
-        const data = snap.data() as any;
-        return {
-          id: snap.id,
-          firstName: data.firstName || "",
-          lastName: data.lastName || "",
-        };
-      });
-
-      // Build provMap: { providerId: "First Last" }
       const pMap: Record<string, string> = {};
-      providers.forEach((p) => {
-        pMap[p.id] = [p.firstName, p.lastName]
-          .filter(Boolean)
-          .join(" ") || "(Unnamed Provider)";
+      provSnap.docs.forEach((snap) => {
+        const d = snap.data() as any;
+        pMap[snap.id] =
+          [d.firstName, d.lastName].filter(Boolean).join(" ") ||
+          "(Unnamed Provider)";
       });
 
-      // C) Query all appointment types for this location
-      //    Clients are allowed if resource.data.locationId == locId
+      // D) Fetch appointment‐type titles (by serviceLocationId)
       const typeQuery = query(
         collection(db, "appointmentTypes"),
-        where("locationId", "==", locId)
+        where("serviceLocationId", "==", locId)
       );
       const typeSnap = await getDocs(typeQuery);
-      const types = typeSnap.docs.map((snap) => {
-        const data = snap.data() as any;
-        return { id: snap.id, title: data.title || "" };
-      });
-
-      // Build typeMap: { typeId: "Type Title" }
       const tMap: Record<string, string> = {};
-      types.forEach((t) => {
-        tMap[t.id] = t.title || "(Unnamed Type)";
+      typeSnap.docs.forEach((snap) => {
+        const d = snap.data() as any;
+        tMap[snap.id] = d.title || "(Unnamed Type)";
       });
 
-      // D) Enrich each appointment for display
-      const enriched = mine.map((a) => ({
+      // E) Enrich each appointment
+      const enriched = rawList.map((a) => ({
         ...a,
         clientName: `${user.firstName} ${user.lastName}`,
         serviceProviderName: a.serviceProviderIds
           ?.map((id) => pMap[id] || "(Any)")
           .join(", "),
-        appointmentTypeName: tMap[a.appointmentTypeId] || "",
+        appointmentTypeName:
+          tMap[a.appointmentTypeId] || "(Unknown Type)",
       }));
 
-      setAppointments(mine);
-      setEnriched(enriched);
+      setAppointments(enriched);
       setProvMap(pMap);
       setTypeMap(tMap);
     } catch (e: any) {
@@ -187,45 +157,33 @@ export default function ClientDashboard() {
     loadAppointments();
   }, [loadAppointments]);
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // 2) Handlers for Edit, Save, Delete
-  // ──────────────────────────────────────────────────────────────────────────
-  const handleEdit = useCallback((appt: Appointment) => {
+  /** 2) Handlers for edit/save/delete */
+  const handleEdit = (appt: Appointment) => {
     setEditing(appt);
     setDialogOpen(true);
-  }, []);
+  };
+  const handleSave = async (updated: Appointment) => {
+    try {
+      await appointmentStore.save(updated);
+      setDialogOpen(false);
+      await loadAppointments();
+    } catch (err: any) {
+      console.error("Save failed:", err);
+      setError(err.message || "Failed to save appointment");
+    }
+  };
+  const handleDelete = async (toDelete: Appointment) => {
+    try {
+      await appointmentStore.delete(toDelete.id!);
+      setDialogOpen(false);
+      await loadAppointments();
+    } catch (err: any) {
+      console.error("Delete failed:", err);
+      setError(err.message || "Failed to delete appointment");
+    }
+  };
 
-  const handleSave = useCallback(
-    async (updated: Appointment) => {
-      try {
-        await appointmentStore.save(updated);
-        setDialogOpen(false);
-        loadAppointments();
-      } catch (saveErr: any) {
-        console.error("Failed to save appointment:", saveErr);
-        setError(saveErr.message || "Failed to save appointment");
-      }
-    },
-    [loadAppointments]
-  );
-
-  const handleDelete = useCallback(
-    async (toDelete: Appointment) => {
-      try {
-        await appointmentStore.delete(toDelete.id!);
-        setDialogOpen(false);
-        loadAppointments();
-      } catch (delErr: any) {
-        console.error("Failed to delete appointment:", delErr);
-        setError(delErr.message || "Failed to delete appointment");
-      }
-    },
-    [loadAppointments]
-  );
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // 3) Redirects / Guards
-  // ──────────────────────────────────────────────────────────────────────────
+  /** 3) Guards & redirects */
   if (authLoading) {
     return (
       <Box textAlign="center" mt={8}>
@@ -234,14 +192,20 @@ export default function ClientDashboard() {
     );
   }
   if (!user) return <Navigate to="/sign-in" replace />;
-  // If no locId or client isn’t actually a client of that loc, redirect
   if (!locId || !user.clientLocationIds?.includes(locId)) {
     return <Navigate to="/" replace />;
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // 4) Render
-  // ──────────────────────────────────────────────────────────────────────────
+  /** 4) Partition into upcoming vs past */
+  const now = Date.now();
+  const upcoming = appointments.filter(
+    (a) => a.startTime.getTime() >= now
+  );
+  const past = appointments.filter(
+    (a) => a.startTime.getTime() < now
+  );
+
+  /** 5) Render */
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
       <Typography variant="h4" align="center" gutterBottom>
@@ -254,21 +218,54 @@ export default function ClientDashboard() {
         </Alert>
       )}
 
-      <Box sx={{ display: "flex", justifyContent: "center" }}>
-        <Box sx={{ width: "100%", maxWidth: "100%" }}>
-          <AppointmentsTable
-            appointments={enrichedAppointments}
-            loading={loading}
-            error={error}
-            onEdit={handleEdit}
-            onViewAssessment={(appt) =>
-              navigate(`/client/${locId}/appointments/${appt.id}`)
-            }
-          />
-        </Box>
-      </Box>
+      {/* Upcoming */}
+      <Typography variant="h5" sx={{ mt: 3 }}>
+        Upcoming Appointments
+      </Typography>
+      <Divider sx={{ mb: 2 }} />
 
-      <Box sx={{ textAlign: "center", mt: 4 }}>
+      {loading ? (
+        <Box textAlign="center" mt={4}>
+          <CircularProgress />
+        </Box>
+      ) : upcoming.length === 0 ? (
+        <Typography sx={{ mb: 2 }}>No upcoming appointments.</Typography>
+      ) : (
+        <AppointmentsTable
+          appointments={upcoming}
+          loading={false}
+          error={null}
+          onEdit={handleEdit}
+          onViewAssessment={(a) =>
+            navigate(`/client/${locId}/appointments/${a.id}`)
+          }
+          showStatusColumn={true}
+        />
+      )}
+
+      {/* Past */}
+      <Typography variant="h5" sx={{ mt: 5 }}>
+        Past Appointments
+      </Typography>
+      <Divider sx={{ mb: 2 }} />
+
+      {past.length === 0 ? (
+        <Typography>No past appointments.</Typography>
+      ) : (
+        <AppointmentsTable
+          appointments={past}
+          loading={false}
+          error={null}
+          onEdit={handleEdit}
+          onViewAssessment={(a) =>
+            navigate(`/client/${locId}/appointments/${a.id}`)
+          }
+          showStatusColumn={true}
+        />
+      )}
+
+      {/* Book CTA */}
+      <Box sx={{ textAlign: "center", mt: 6 }}>
         <Button
           component={RouterLink}
           to={`/client/${locId}/booking`}
@@ -278,6 +275,7 @@ export default function ClientDashboard() {
         </Button>
       </Box>
 
+      {/* Edit Dialog */}
       {dialogOpen && editing && (
         <AppointmentFormDialog
           open={dialogOpen}
@@ -287,10 +285,7 @@ export default function ClientDashboard() {
           onSave={handleSave}
           onDelete={handleDelete}
           clients={[
-            {
-              id: user.uid,
-              label: `${user.firstName} ${user.lastName}`,
-            },
+            { id: user.uid, label: `${user.firstName} ${user.lastName}` },
           ]}
           serviceProviders={Object.entries(provMap).map(
             ([id, label]) => ({ id, label })

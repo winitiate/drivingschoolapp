@@ -1,35 +1,6 @@
-/**
- * src/components/Appointments/AppointmentFormDialog.tsx
- *
- * This client‐side dialog now uses an inline “Cancellation Reason” field
- * instead of window.prompt(…). When “Cancel Appointment” is clicked:
- *  1) An inline text field appears for the reason.
- *  2) Typing anything enables “Confirm Cancellation.”
- *  3) Clicking “Confirm Cancellation” issues a refund (if needed) and then
- *     performs a soft‐cancel by saving the appointment back with:
- *       status: "cancelled"
- *       cancellation: { time, reason, feeApplied: false }
- *
- * Props:
- *   • open: boolean
- *   • serviceLocationId: string
- *   • initialData?: Appointment
- *   • onClose(): void
- *   • onSave(appt: Appointment): Promise<void>
- *         – Used for both create/edit and soft‐cancel updates.
- *   • clients: Option[]
- *   • serviceProviders: Option[]
- *   • appointmentTypes: Option[]
- *   • canEditClient?: boolean
- *   • canEditAppointmentType?: boolean
- *   • canEditProvider?: boolean
- *   • canEditDateTime?: boolean
- *   • canCancel?: boolean
- *
- * NOTE: No window.prompt calls remain here.
- */
+// src/components/Appointments/AppointmentFormDialog.tsx
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -40,8 +11,6 @@ import {
   MenuItem,
   Box,
   Typography,
-  Checkbox,
-  ListItemText,
   Alert,
   CircularProgress,
 } from "@mui/material";
@@ -50,9 +19,19 @@ import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { v4 as uuidv4 } from "uuid";
 import { differenceInMinutes, addMinutes } from "date-fns";
+import dayjs, { Dayjs } from "dayjs";
+
+import ProviderSelect from "../../pages/Client/BookingPage/components/ProviderSelect";
+import DateSelector   from "../../pages/Client/BookingPage/components/DateSelector";
+import TimeSlots      from "../../pages/Client/BookingPage/components/TimeSlots";
+
+import { useAvailabilities }  from "../../hooks/useAvailabilities";
+import { useAppointmentsMap } from "../../hooks/useAppointmentsMap";
+import { buildSlots }         from "../../utils/bookingUtils";
+
+import { FirestoreAppointmentStore } from "../../data/FirestoreAppointmentStore";
 
 import type { Appointment } from "../../models/Appointment";
-import { cancelAppointment as callCancelAppointment } from "../../services/cancelAppointment";
 
 export interface Option {
   id: string;
@@ -73,6 +52,7 @@ export interface AppointmentFormDialogProps {
   canEditProvider?: boolean;
   canEditDateTime?: boolean;
   canCancel?: boolean;
+  availabilityStore: any; // your FirestoreAvailabilityStore instance
 }
 
 export default function AppointmentFormDialog({
@@ -84,84 +64,164 @@ export default function AppointmentFormDialog({
   clients,
   serviceProviders,
   appointmentTypes,
-  canEditClient = true,
-  canEditAppointmentType = true,
-  canEditProvider = true,
-  canEditDateTime = true,
-  canCancel = true,
+  canEditClient            = true,
+  canEditAppointmentType   = true,
+  canEditProvider          = true,
+  canEditDateTime          = true,
+  canCancel                = true,
+  availabilityStore,
 }: AppointmentFormDialogProps) {
   const isEdit = Boolean(initialData?.id);
 
-  // ───────── Form fields ─────────
+  // ───────── Core form state ─────────
   const [appointmentTypeId, setAppointmentTypeId] = useState<string>("");
-  const [clientIds, setClientIds] = useState<string[]>([]);
-  const [serviceProviderIds, setServiceProviderIds] = useState<string[]>([]);
-  const [appointmentStart, setAppointmentStart] = useState<Date | null>(
+  const [clientIds,         setClientIds]         = useState<string[]>([]);
+  const [serviceProviderId, setServiceProviderId] = useState<string>(""); // single
+  const [appointmentStart,  setAppointmentStart]  = useState<Date | null>(
     new Date()
   );
   const [appointmentEnd, setAppointmentEnd] = useState<Date | null>(
     addMinutes(new Date(), 60)
   );
-  const [saving, setSaving] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [saving,  setSaving]  = useState<boolean>(false);
+  const [error,   setError]   = useState<string | null>(null);
 
-  // ───────── Cancellation UI State ─────────
+  // ───────── Cancellation UI ─────────
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [cancelReason, setCancelReason] = useState<string>("");
 
-  // ───────── Reset when dialog opens or initialData changes ─────────
+  // ───────── Reschedule UI ─────────
+  const [isRescheduling, setIsRescheduling] = useState<boolean>(false);
+  const [availableDates, setAvailableDates] = useState<Dayjs[]>([]);
+  const [selectedDate,   setSelectedDate]   = useState<Dayjs | null>(null);
+  const [slots,          setSlots]          = useState<any[]>([]);
+
+  // ───────── Firestore hooks ─────────
+  const apptStore = useMemo(() => new FirestoreAppointmentStore(), []);
+
+  // 1) Map your {id,label} array into {id,name} for ProviderSelect & hooks
+  const providerOptions = useMemo(
+    () =>
+      serviceProviders.map((sp) => ({
+        id: sp.id,
+        name: sp.label,    // ProviderSelect & useAppointmentsMap expect `.name`
+      })),
+    [serviceProviders]
+  );
+
+  // 2) Subscribe to just this provider’s availability (or “any”)
+  const chosenProvider = serviceProviderId || "any";
+  const { availabilities, loading: availLoading } = useAvailabilities(
+    chosenProvider,
+    availabilityStore,
+    providerOptions
+  );
+
+  // 3) Pass ISO‐string dates to useAppointmentsMap
+  const apptsByDate = useAppointmentsMap(
+    providerOptions,
+    chosenProvider,
+    apptStore,
+    serviceLocationId,
+    availableDates.map((d) => d.format("YYYY-MM-DD"))
+  );
+
+  // ───────── Reset form when dialog opens or initialData changes ─────────
   useEffect(() => {
     if (!open) return;
+
     setError(null);
+    setSaving(false);
     setIsCancelling(false);
     setCancelReason("");
+    setIsRescheduling(false);
 
     if (initialData) {
       setAppointmentTypeId(initialData.appointmentTypeId);
-      setClientIds(initialData.clientIds || []);
-      setServiceProviderIds(initialData.serviceProviderIds || []);
+      setClientIds(initialData.clientIds ?? []);
+      setServiceProviderId(initialData.serviceProviderIds?.[0] || "");
       setAppointmentStart(new Date(initialData.startTime));
       setAppointmentEnd(new Date(initialData.endTime));
     } else {
       const now = new Date();
-      setAppointmentTypeId(appointmentTypes[0]?.id || "");
-      setClientIds(clients[0] ? [clients[0].id] : []);
-      setServiceProviderIds(
-        serviceProviders[0] ? [serviceProviders[0].id] : []
-      );
+      setAppointmentTypeId(appointmentTypes[0]?.id ?? "");
+      setClientIds(clients.length ? [clients[0].id] : []);
+      setServiceProviderId(serviceProviders[0]?.id ?? "");
       setAppointmentStart(now);
       setAppointmentEnd(addMinutes(now, 60));
     }
+  }, [open, initialData, appointmentTypes, clients, serviceProviders]);
+
+  // ───────── Build calendar days when we enter Reschedule mode or the provider’s availability changes ─────────
+  useEffect(() => {
+    if (!isRescheduling || availLoading) return;
+
+    // Clear and then compute the next 30 days that have slots
+    const next30 = Array.from({ length: 30 }, (_, i) => dayjs().add(i, "day"));
+    const good = next30.filter((d) =>
+      buildSlots(
+        d,
+        availabilities,
+        providerOptions,
+        apptsByDate,
+        chosenProvider
+      ).length > 0
+    );
+    setAvailableDates(good);
+    setSelectedDate(good[0] ?? null);
   }, [
-    open,
-    initialData,
-    appointmentTypes,
-    clients,
-    serviceProviders,
+    isRescheduling,
+    availLoading,
+    availabilities,
+    providerOptions,
+    apptsByDate,
+    chosenProvider,
   ]);
 
-  // ───────── Handle “Save” (create or edit) ─────────
+  // ───────── When the selectedDate changes, recompute that day’s slots ─────────
+  useEffect(() => {
+    if (!isRescheduling || !selectedDate) return;
+    const daySlots = buildSlots(
+      selectedDate,
+      availabilities,
+      providerOptions,
+      apptsByDate,
+      chosenProvider
+    );
+    setSlots(daySlots);
+  }, [
+    isRescheduling,
+    selectedDate,
+    availabilities,
+    providerOptions,
+    apptsByDate,
+    chosenProvider,
+  ]);
+
+  // ───────── Submit (create / edit / reschedule) ─────────
   const handleSubmit = async () => {
     if (!appointmentStart || !appointmentEnd) return;
     setSaving(true);
     setError(null);
 
-    const duration = differenceInMinutes(appointmentEnd, appointmentStart);
+    const duration = differenceInMinutes(
+      appointmentEnd,
+      appointmentStart
+    );
+
     const appt: Appointment = {
-      id: initialData?.id || uuidv4(),
+      id: initialData?.id ?? uuidv4(),
       appointmentTypeId,
       clientIds,
-      serviceProviderIds,
+      serviceProviderIds: [serviceProviderId],
       serviceLocationId,
       startTime: appointmentStart,
       endTime: appointmentEnd,
       durationMinutes: duration,
-      status: initialData?.status || "scheduled",
+      status: initialData?.status ?? "scheduled",
       notes: initialData?.notes || "",
-      locationOverride: initialData?.locationOverride,
-      customFields: initialData?.customFields,
-      paymentId: initialData?.paymentId,
       cancellation: initialData?.cancellation,
+      paymentId: initialData?.paymentId,
       assessmentId: initialData?.assessmentId,
       metadata: initialData?.metadata,
     };
@@ -170,50 +230,29 @@ export default function AppointmentFormDialog({
       await onSave(appt);
       onClose();
     } catch (e: any) {
-      setError(e?.message ?? "Failed to save appointment");
+      setError(e.message ?? "Failed to save");
     } finally {
       setSaving(false);
     }
   };
 
-  // ───────── Handle “Start Cancellation” ─────────
+  // ───────── Cancellation handlers ─────────
   const handleStartCancel = () => {
     setIsCancelling(true);
     setCancelReason("");
   };
-
-  // ───────── Handle “Abort Cancellation” ─────────
   const handleAbortCancel = () => {
     setIsCancelling(false);
     setCancelReason("");
   };
-
-  // ───────── Handle “Confirm Cancellation” ─────────
   const handleConfirmCancel = async () => {
-    if (!initialData || !initialData.id) return;
-    if (!cancelReason.trim()) {
-      setError("A reason is required to cancel.");
+    if (!initialData?.id || !cancelReason.trim()) {
+      setError("A reason is required");
       return;
     }
-
     setSaving(true);
     setError(null);
-
-    // Pull paymentId + amountCents from metadata
-    const pid = initialData.metadata?.paymentId as string | undefined;
-    const cents = (initialData.metadata?.amountCents as number) || 0;
-
     try {
-      // 1️⃣ Issue refund if paymentId exists
-      if (pid) {
-        await callCancelAppointment({
-          appointmentId: initialData.id,
-          paymentId: pid,
-          amountCents: cents,
-          reason: cancelReason.trim(),
-        });
-      }
-      // 2️⃣ Soft‐cancel by saving an updated copy
       const updated: Appointment = {
         ...initialData,
         status: "cancelled",
@@ -226,21 +265,26 @@ export default function AppointmentFormDialog({
       await onSave(updated);
       onClose();
     } catch (e: any) {
-      setError(e?.message ?? "Cancellation / refund failed");
+      setError(e.message ?? "Cancellation failed");
     } finally {
       setSaving(false);
       setIsCancelling(false);
     }
   };
 
-  // ───────── Render ─────────
-  const showCancelButton = isEdit && canCancel && !isCancelling;
-  const confirmEnabled = Boolean(cancelReason.trim());
+  // ───────── UI flags ─────────
+  const showCancelButton =
+    isEdit && canCancel && !isCancelling && !isRescheduling;
+  const cancelEnabled = Boolean(cancelReason.trim());
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>
-        {isEdit ? "Edit Appointment" : "Add Appointment"}
+        {isRescheduling
+          ? "Reschedule Appointment"
+          : isEdit
+          ? "Edit Appointment"
+          : "New Appointment"}
       </DialogTitle>
 
       <DialogContent dividers>
@@ -249,9 +293,8 @@ export default function AppointmentFormDialog({
             {error}
           </Alert>
         )}
-
         {saving && (
-          <Box textAlign="center" mt={1} mb={2}>
+          <Box textAlign="center" my={2}>
             <CircularProgress size={24} />
           </Box>
         )}
@@ -264,7 +307,12 @@ export default function AppointmentFormDialog({
             value={appointmentTypeId}
             onChange={(e) => setAppointmentTypeId(e.target.value)}
             fullWidth
-            disabled={!canEditAppointmentType || saving || isCancelling}
+            disabled={
+              !canEditAppointmentType ||
+              saving ||
+              isCancelling ||
+              isRescheduling
+            }
           >
             {appointmentTypes.map((opt) => (
               <MenuItem key={opt.id} value={opt.id}>
@@ -273,97 +321,137 @@ export default function AppointmentFormDialog({
             ))}
           </TextField>
 
-          {/* Client(s) */}
-          {canEditClient ? (
-            <TextField
-              select
-              multiple
-              label="Client(s)"
-              value={clientIds}
-              onChange={(e) => setClientIds(e.target.value as string[])}
-              fullWidth
-              disabled={saving || isCancelling}
-              renderValue={(selected) =>
-                (selected as string[])
-                  .map((id) => clients.find((c) => c.id === id)?.label)
-                  .join(", ")
-              }
-            >
-              {clients.map((opt) => (
-                <MenuItem key={opt.id} value={opt.id}>
-                  <Checkbox checked={clientIds.includes(opt.id)} />
-                  <ListItemText primary={opt.label} />
-                </MenuItem>
-              ))}
-            </TextField>
-          ) : (
-            <Box>
-              <Typography variant="subtitle2">Client(s)</Typography>
-              <Typography variant="body1">
-                {clientIds
-                  .map((id) => clients.find((c) => c.id === id)?.label)
-                  .join(", ")}
-              </Typography>
-            </Box>
-          )}
-
-          {/* Service Provider(s) */}
+          {/* Client */}
           <TextField
             select
-            multiple
-            label="Service Provider(s)"
-            value={serviceProviderIds}
-            onChange={(e) =>
-              setServiceProviderIds(e.target.value as string[])
-            }
+            label="Client"
+            value={clientIds[0] ?? ""}
+            onChange={(e) => setClientIds([e.target.value])}
             fullWidth
-            disabled={!canEditProvider || saving || isCancelling}
-            renderValue={(selected) =>
-              (selected as string[])
-                .map((id) => serviceProviders.find((sp) => sp.id === id)?.label)
-                .join(", ")
+            disabled={
+              !canEditClient ||
+              saving ||
+              isCancelling ||
+              isRescheduling
             }
           >
-            {serviceProviders.map((opt) => (
+            {clients.map((opt) => (
               <MenuItem key={opt.id} value={opt.id}>
-                <Checkbox checked={serviceProviderIds.includes(opt.id)} />
-                <ListItemText primary={opt.label} />
+                {opt.label}
               </MenuItem>
             ))}
           </TextField>
 
-          {/* Date / Time Pickers */}
-          <LocalizationProvider dateAdapter={AdapterDateFns}>
-            <DateTimePicker
-              label="Start Time"
-              value={appointmentStart}
-              onChange={setAppointmentStart}
-              disabled={!canEditDateTime || saving || isCancelling}
-              slotProps={{ textField: { fullWidth: true } }}
+          {/* Service Provider */}
+          {!isRescheduling && canEditProvider ? (
+            <TextField
+              select
+              label="Service Provider"
+              value={serviceProviderId}
+              onChange={(e) => setServiceProviderId(e.target.value)}
+              fullWidth
+              disabled={saving || isCancelling}
+            >
+              {serviceProviders.map((opt) => (
+                <MenuItem key={opt.id} value={opt.id}>
+                  {opt.label}
+                </MenuItem>
+              ))}
+            </TextField>
+          ) : isRescheduling ? (
+            <ProviderSelect
+              providers={providerOptions}
+              value={serviceProviderId}
+              onChange={setServiceProviderId}
+              disabled={saving}
             />
-            <DateTimePicker
-              label="End Time"
-              value={appointmentEnd}
-              onChange={setAppointmentEnd}
-              disabled={!canEditDateTime || saving || isCancelling}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
-          </LocalizationProvider>
+          ) : (
+            <Box>
+              <Typography variant="subtitle2">
+                Service Provider
+              </Typography>
+              <Typography variant="body1">
+                {
+                  serviceProviders.find(
+                    (sp) => sp.id === serviceProviderId
+                  )?.label || "—"
+                }
+              </Typography>
+            </Box>
+          )}
 
-          {/* Inline “Cancellation Reason” field */}
+          {/* Date/Time vs. Reschedule calendar */}
+          {!isRescheduling ? (
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DateTimePicker
+                label="Start Time"
+                value={appointmentStart}
+                onChange={setAppointmentStart}
+                slotProps={{ textField: { fullWidth: true } }}
+                disabled={
+                  !canEditDateTime ||
+                  saving ||
+                  isCancelling
+                }
+              />
+              <DateTimePicker
+                label="End Time"
+                value={appointmentEnd}
+                onChange={setAppointmentEnd}
+                slotProps={{ textField: { fullWidth: true } }}
+                disabled={
+                  !canEditDateTime ||
+                  saving ||
+                  isCancelling
+                }
+              />
+            </LocalizationProvider>
+          ) : (
+            <>
+              <DateSelector
+                availableDates={availableDates}
+                firstAvail={availableDates[0]}
+                value={selectedDate}
+                onChange={setSelectedDate}
+              />
+              <TimeSlots
+                slots={slots}
+                selectedDate={selectedDate}
+                onSlotClick={(slot) => {
+                  if (!selectedDate) return;
+                  const base = selectedDate.toDate();
+                  const [sh, sm] = slot.start
+                    .split(":")
+                    .map(Number);
+                  const [eh, em] = slot.end
+                    .split(":")
+                    .map(Number);
+                  const s = new Date(base);
+                  s.setHours(sh, sm, 0, 0);
+                  const e = new Date(base);
+                  e.setHours(eh, em, 0, 0);
+                  setAppointmentStart(s);
+                  setAppointmentEnd(e);
+                }}
+              />
+            </>
+          )}
+
+          {/* Inline Cancellation Reason */}
           {isCancelling && (
             <Box mt={2}>
-              <Typography variant="subtitle1" gutterBottom>
+              <Typography variant="subtitle1">
                 Cancellation Reason
               </Typography>
               <TextField
                 multiline
                 minRows={2}
                 value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
+                onChange={(e) =>
+                  setCancelReason(e.target.value)
+                }
+                placeholder="Reason for cancellation..."
                 fullWidth
-                disabled={saving}
-                placeholder="Enter the reason for cancellation..."
               />
             </Box>
           )}
@@ -371,7 +459,6 @@ export default function AppointmentFormDialog({
       </DialogContent>
 
       <DialogActions sx={{ justifyContent: "space-between", p: 2 }}>
-        {/* “Cancel Appointment” button (starts inline reason) */}
         {showCancelButton && (
           <Button
             color="error"
@@ -382,11 +469,18 @@ export default function AppointmentFormDialog({
           </Button>
         )}
 
-        {/* “Abort” and “Confirm Cancellation” buttons */}
+        {isEdit && !isCancelling && !isRescheduling && (
+          <Button
+            onClick={() => setIsRescheduling(true)}
+            disabled={saving}
+          >
+            Reschedule Appointment
+          </Button>
+        )}
+
         {isCancelling && (
           <Box display="flex" gap={1}>
             <Button
-              color="inherit"
               onClick={handleAbortCancel}
               disabled={saving}
             >
@@ -395,18 +489,19 @@ export default function AppointmentFormDialog({
             <Button
               color="error"
               onClick={handleConfirmCancel}
-              disabled={!confirmEnabled || saving}
+              disabled={!cancelEnabled || saving}
             >
               Confirm Cancellation
             </Button>
           </Box>
         )}
 
-        {/* “Close” / “Save” (hidden during cancellation) */}
         {!isCancelling && (
           <Box display="flex" gap={1}>
             <Button onClick={onClose} disabled={saving}>
-              Close
+              {isRescheduling
+                ? "Cancel Reschedule"
+                : "Close"}
             </Button>
             <Button
               variant="contained"

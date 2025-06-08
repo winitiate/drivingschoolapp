@@ -4,9 +4,9 @@ import React from 'react';
 import {
   AppBar,
   Toolbar,
-  Typography,
   Container,
   Box,
+  Typography,
   Button,
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
@@ -22,6 +22,7 @@ export default function Header() {
   return (
     <AppBar position="static">
       <Toolbar disableGutters>
+        {/* 1) This Container inside the Toolbar constrains only the content */}
         <Container
           maxWidth="md"
           sx={{
@@ -30,7 +31,7 @@ export default function Header() {
             justifyContent: 'space-between',
           }}
         >
-          {/* ─────── Left: Brand ─────── */}
+          {/* ─────── Brand on the left ─────── */}
           <Typography
             variant="h6"
             component={RouterLink}
@@ -43,23 +44,22 @@ export default function Header() {
             Business Management Software
           </Typography>
 
-          {/* ─────── Right: Links & Theme ─────── */}
+          {/* ─────── Nav links / menu / toggle on the right ─────── */}
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            {user ? (
-              <NavMenu items={items} />
-            ) : (
-              items.map((item) => (
-                <Button
-                  key={item.to}
-                  component={RouterLink}
-                  to={item.to}
-                  color="inherit"
-                  sx={{ textTransform: 'none', ml: 1 }}
-                >
-                  {item.label}
-                </Button>
-              ))
-            )}
+            {user
+              ? <NavMenu items={items} />
+              : items.map(item => (
+                  <Button
+                    key={item.to}
+                    component={RouterLink}
+                    to={item.to}
+                    color="inherit"
+                    sx={{ textTransform: 'none', ml: 1 }}
+                  >
+                    {item.label}
+                  </Button>
+                ))
+            }
             <Box sx={{ ml: 2 }}>
               <ThemeToggle />
             </Box>

@@ -1,136 +1,135 @@
 // src/components/Appointments/AppointmentsTable.tsx
 
-import React from "react";
+import React from 'react';
 import {
   Table,
   TableHead,
   TableRow,
   TableCell,
   TableBody,
-  Button,
-  Box,
+  IconButton,
   Typography,
-} from "@mui/material";
-import { format } from "date-fns";
-import type { Appointment } from "../../models/Appointment";
-import type { Timestamp } from "firebase/firestore";
+  Box,
+  CircularProgress,
+} from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import type { Appointment } from '../../models/Appointment';
 
 export interface AppointmentsTableProps {
-  appointments: (Appointment & {
-    clientName?: string;
-    serviceProviderName?: string;
-    appointmentTypeName?: string;
-  })[];
+  appointments: Array<
+    Appointment & {
+      clientName?: string;
+      serviceProviderName?: string;
+      appointmentTypeName?: string;
+    }
+  >;
   loading: boolean;
   error: string | null;
-  onEdit: (appointment: Appointment) => void;
-  onAssess?: (appointment: Appointment) => void;
-  onViewAssessment?: (appointment: Appointment) => void;
-  onDelete?: (appointment: Appointment) => void; // ← Soft-cancel callback
+  onEdit?: (appt: Appointment) => void;
+  onViewAssessment?: (appt: Appointment) => void;
+  onDelete?: (appt: Appointment) => void;
+  /** When true, shows a Status column on the right */
+  showStatusColumn?: boolean;
 }
-
-/** Converts a Date | Timestamp | string | null to formatted text. */
-const fmt = (val: any, pat: string) => {
-  if (!val) return "—";
-  const d =
-    val instanceof Date
-      ? val
-      : (typeof val === "object" && "toDate" in val)
-      ? (val as Timestamp).toDate()
-      : new Date(val);
-  return isNaN(d.getTime()) ? "—" : format(d, pat);
-};
 
 export default function AppointmentsTable({
   appointments,
   loading,
   error,
   onEdit,
-  onAssess,
   onViewAssessment,
   onDelete,
+  showStatusColumn = false,
 }: AppointmentsTableProps) {
-  if (loading)
+  if (loading) {
     return (
-      <Box textAlign="center" mt={4}>
-        <Typography>Loading appointments…</Typography>
+      <Box textAlign="center" my={4}>
+        <CircularProgress />
       </Box>
     );
+  }
 
-  if (error)
+  if (error) {
     return (
-      <Box textAlign="center" mt={4}>
-        <Typography color="error">{error}</Typography>
-      </Box>
+      <Typography color="error" align="center">
+        {error}
+      </Typography>
     );
+  }
 
-  if (appointments.length === 0)
-    return (
-      <Box textAlign="center" mt={4}>
-        <Typography>No appointments found.</Typography>
-      </Box>
-    );
+  if (!appointments.length) {
+    return <Typography align="center">No appointments to display.</Typography>;
+  }
 
   return (
     <Table>
       <TableHead>
         <TableRow>
-          <TableCell>Client</TableCell>
-          <TableCell>Service&nbsp;Provider(s)</TableCell>
-          <TableCell>Date</TableCell>
-          <TableCell>Start</TableCell>
-          <TableCell>End</TableCell>
-          <TableCell align="center">Actions</TableCell>
+          <TableCell><strong>Date</strong></TableCell>
+          <TableCell><strong>Time</strong></TableCell>
+          <TableCell><strong>Client</strong></TableCell>
+          <TableCell><strong>Provider</strong></TableCell>
+          <TableCell><strong>Type</strong></TableCell>
+          {showStatusColumn && <TableCell><strong>Status</strong></TableCell>}
+          <TableCell align="center"><strong>Actions</strong></TableCell>
         </TableRow>
       </TableHead>
-
       <TableBody>
-        {appointments.map((a) => (
-          <TableRow key={a.id}>
-            <TableCell>{a.clientName ?? "—"}</TableCell>
-            <TableCell>{a.serviceProviderName ?? "—"}</TableCell>
-            <TableCell>{fmt(a.startTime, "yyyy-MM-dd")}</TableCell>
-            <TableCell>{fmt(a.startTime, "h:mm a")}</TableCell>
-            <TableCell>{fmt(a.endTime,   "h:mm a")}</TableCell>
+        {appointments.map((appt) => {
+          // Handle Firestore Timestamp vs JS Date
+          const start = appt.startTime instanceof Date
+            ? appt.startTime
+            : appt.startTime?.toDate
+            ? appt.startTime.toDate()
+            : new Date(appt.startTime as any);
 
-            <TableCell align="center">
-              <Box display="flex" justifyContent="center" gap={1} flexWrap="nowrap">
-                {/* Edit button */}
-                <Button size="small" onClick={() => onEdit(a)}>
-                  Edit
-                </Button>
+          const dateString = start.toLocaleDateString();
+          const timeString = start.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
 
-                {/* Optional Assess button */}
-                {onAssess && (
-                  <Button size="small" onClick={() => onAssess(a)}>
-                    Assess
-                  </Button>
-                )}
-
-                {/* Optional View Assessment button */}
-                {onViewAssessment && (
-                  <Button size="small" onClick={() => onViewAssessment(a)}>
-                    View&nbsp;Assessment
-                  </Button>
-                )}
-
-                {/*
-                  The “Cancel” button calls onDelete(a) if provided.
-                  It does NOT delete the document itself.
-                */}
-                {onDelete && (
-                  <Button
+          return (
+            <TableRow key={appt.id}>
+              <TableCell>{dateString}</TableCell>
+              <TableCell>{timeString}</TableCell>
+              <TableCell>{appt.clientName || '—'}</TableCell>
+              <TableCell>{appt.serviceProviderName || '—'}</TableCell>
+              <TableCell>{appt.appointmentTypeName || '—'}</TableCell>
+              {showStatusColumn && (
+                <TableCell>{appt.status || '—'}</TableCell>
+              )}
+              <TableCell align="center">
+                {onEdit && (
+                  <IconButton
                     size="small"
-                    color="error"
-                    onClick={() => onDelete(a)}
+                    onClick={() => onEdit(appt)}
                   >
-                    Cancel
-                  </Button>
+                    <EditIcon fontSize="small" />
+                  </IconButton>
                 )}
-              </Box>
-            </TableCell>
-          </TableRow>
-        ))}
+                {onViewAssessment && (
+                  <IconButton
+                    size="small"
+                    onClick={() => onViewAssessment(appt)}
+                  >
+                    <VisibilityIcon fontSize="small" />
+                  </IconButton>
+                )}
+                {onDelete && (
+                  <IconButton
+                    size="small"
+                    onClick={() => onDelete(appt)}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );

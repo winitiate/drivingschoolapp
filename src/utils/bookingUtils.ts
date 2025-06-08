@@ -1,108 +1,83 @@
-import dayjs, { Dayjs } from "dayjs";
+// src/utils/bookingUtils.ts
+
+import dayjs from "dayjs";
+import type { Dayjs } from "dayjs";
+import type { ProviderAvailability, DailySlot } from "../models/Availability";
 import type { Appointment } from "../models/Appointment";
-import type { Availability, DailySlot } from "../models/Availability";
-
-/* —————————————————————————————————————————— *
- *  Pure helpers — NO React imports here
- * —————————————————————————————————————————— */
-
-/** Does an appointment overlap a slot on a given ISO date? */
-export function overlaps(
-  a: Appointment,
-  slot: DailySlot,
-  iso: string
-): boolean {
-  const aStart = dayjs(a.startTime);
-  const aEnd   = dayjs(a.endTime);
-  const sStart = dayjs(`${iso}T${slot.start}`);
-  const sEnd   = dayjs(`${iso}T${slot.end}`);
-  return aStart.isBefore(sEnd) && aEnd.isAfter(sStart);
-}
-
-/** Returns true if the provider still has capacity in that slot. */
-export function providerHasRoom(
-  pid: string,
-  slot: DailySlot,
-  iso: string,
-  cap: number,
-  apptsOfDay: Appointment[]
-): boolean {
-  const used = apptsOfDay.filter(
-    (a) => a.serviceProviderIds?.includes(pid) && overlaps(a, slot, iso)
-  ).length;
-  return used < cap;
-}
 
 /**
- * Build the unique, capacity-filtered slot list for a given day.
- * Pure; no setState side-effects inside.
+ * Builds the list of available slots for a given service location + provider(s),
+ * taking into account existing appointments.
+ *
+ * @param selectedDate     – the date (Dayjs) to build slots for
+ * @param availabilities   – array of ProviderAvailability records
+ * @param providers        – array of { id: string } for each provider
+ * @param apptsByDate      – Map from “YYYY-MM-DD” → Appointment[]
+ * @param selectedProvider – the providerId or “any”
  */
 export function buildSlots(
-  date: Dayjs | null,
-  availabilities: Availability[],
-  providers: { id: string; maxSimultaneousClients: number }[],
+  selectedDate: Dayjs | Date | null,
+  availabilities: ProviderAvailability[] | undefined | null,
+  providers: { id: string }[],
   apptsByDate: Map<string, Appointment[]>,
   selectedProvider: string
 ): DailySlot[] {
-  if (!date) return [];
+  // ───── GUARD ─────
+  // If availabilities isn’t an array, treat it as empty.
+  const avails: ProviderAvailability[] = Array.isArray(availabilities)
+    ? availabilities
+    : [];
 
-  const iso = date.format("YYYY-MM-DD");
-  const weekday = date.day();
+  if (!selectedDate) return [];
 
-  type Combo = { slot: DailySlot; providerId: string; cap: number };
-  const combos: Combo[] = [];
+  // We’ll return this list:
+  const slots: DailySlot[] = [];
 
-  /* Flatten all provider-scoped availabilities into slot/provider pairs */
-  availabilities.forEach((a) => {
-    const sch = a.weekly.find((w) => w.weekday === weekday);
-    if (!sch) return;
-    const cap =
-      a.maxConcurrent ??
-      providers.find((p) => p.id === a.scopeId)?.maxSimultaneousClients ??
-      Infinity;
+  // Build a YYYY-MM-DD key for looking up existing appointments
+  const dateKey = dayjs(selectedDate).format("YYYY-MM-DD");
+  const todaysAppointments = apptsByDate.get(dateKey) ?? [];
 
-    sch.slots.forEach((s) =>
-      combos.push({ slot: s, providerId: a.scopeId, cap })
-    );
-  });
+  // Determine weekday 0=Sunday…6=Saturday
+  const weekday = dayjs(selectedDate).day();
 
-  /* Unique slots for that weekday */
-  const uniq: DailySlot[] = Array.from(
-    new Map(combos.map((c) => [`${c.slot.start}-${c.slot.end}`, c.slot])).values()
-  ).sort((a, b) => a.start.localeCompare(b.start));
-
-  if (uniq.length === 0) return [];
-
-  const apptsOfDay = apptsByDate.get(iso) ?? [];
-
-  /* Capacity filter */
-  return uniq.filter((slot) => {
-    if (selectedProvider !== "any") {
-      const cap =
-        availabilities.find((a) => a.scopeId === selectedProvider)?.maxConcurrent ??
-        providers.find((p) => p.id === selectedProvider)?.maxSimultaneousClients ??
-        Infinity;
-      return providerHasRoom(
-        selectedProvider,
-        slot,
-        iso,
-        cap,
-        apptsOfDay
-      );
+  // For each availability document…
+  avails.forEach((avail) => {
+    // If a specific provider is selected, skip the others
+    if (selectedProvider !== "any" && avail.scopeId !== selectedProvider) {
+      return;
     }
 
-    /* “any” -> keep slot if at least one provider can host it */
-    return providers.some((p) => {
-      const offers = combos.some(
-        (c) => c.providerId === p.id && c.slot.start === slot.start
-      );
-      if (!offers) return false;
+    // Each availability has a `.weekly` array of { weekday, slots: [ { start, end } ] }
+    const daySchedule = avail.weekly.find((w) => w.weekday === weekday);
+    if (!daySchedule) return;
 
-      const cap =
-        availabilities.find((a) => a.scopeId === p.id)?.maxConcurrent ??
-        p.maxSimultaneousClients;
+    daySchedule.slots.forEach((timeSlot) => {
+      // Build a slot object `{ start, end }` for this date
+      const start = timeSlot.start; // e.g. "13:00"
+      const end   = timeSlot.end;   // e.g. "14:30"
 
-      return providerHasRoom(p.id, slot, iso, cap, apptsOfDay);
+      // Check for collisions with any existing appointment
+      const conflict = todaysAppointments.some((appt) => {
+        const apptStart = dayjs(`${dateKey}T${(appt.startTime as any).toISOString().substr(11,5)}`);
+        const apptEnd   = dayjs(`${dateKey}T${(appt.endTime   as any).toISOString().substr(11,5)}`);
+        const slotStart = dayjs(`${dateKey}T${start}`);
+        const slotEnd   = dayjs(`${dateKey}T${end}`);
+        // overlap if slotStart < apptEnd && apptStart < slotEnd
+        return slotStart.isBefore(apptEnd) && apptStart.isBefore(slotEnd);
+      });
+
+      if (!conflict) {
+        slots.push({
+          start,
+          end,
+          providerId: avail.scopeId,
+        });
+      }
     });
   });
+
+  // Optionally, sort by start time
+  slots.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+
+  return slots;
 }
