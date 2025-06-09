@@ -1,5 +1,3 @@
-// src/hooks/useAvailabilities.ts
-
 import { useState, useEffect } from "react";
 import {
   collection,
@@ -12,12 +10,6 @@ import {
 import { db } from "../firebase";
 import type { ProviderAvailability } from "../models/Availability";
 
-interface UseAvailabilitiesParams {
-  selectedProvider: string;
-  availabilityStore: any;
-  providers: { id: string }[];
-}
-
 /**
  * Custom hook to fetch “availability” documents from Firestore in real time.
  *
@@ -27,64 +19,56 @@ interface UseAvailabilitiesParams {
 export function useAvailabilities(
   selectedProvider: string,
   availabilityStore: any,
-  providers: { id: string }[]                 // still required
+  providers: { id: string }[]  // only used to guard initial call
 ) {
   const [availabilities, setAvailabilities] = useState<ProviderAvailability[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Guard: if no provider selected *or* providers list is missing/empty, clear & stop
-    if (
-      !selectedProvider ||
-      !Array.isArray(providers) ||
-      providers.length === 0
-    ) {
+    // Guard: if no valid provider selected or providers list empty, clear and stop
+    if (!selectedProvider || providers.length === 0) {
       setAvailabilities([]);
       setLoading(false);
       return;
     }
 
-    // Case: “any” → listen to *all* availabilities
+    setLoading(true);
+    let unsubscribe: () => void;
+
     if (selectedProvider === "any") {
       const collRef = collection(db, "availabilities");
-      const unsubscribeAll = onSnapshot(
+      unsubscribe = onSnapshot(
         collRef,
         (snapshot: QuerySnapshot<DocumentData>) => {
-          const docs: ProviderAvailability[] = snapshot.docs.map((docSnap) => {
-            const data = docSnap.data() as ProviderAvailability;
-            return {
-              ...data,
-              id: docSnap.id,
-            };
-          });
+          const docs = snapshot.docs.map((docSnap) => ({
+            ...(docSnap.data() as ProviderAvailability),
+            id: docSnap.id,
+          }));
           setAvailabilities(docs);
           setLoading(false);
         }
       );
-      return () => unsubscribeAll();
+    } else {
+      const q = query(
+        collection(db, "availabilities"),
+        where("scopeId", "==", selectedProvider)
+      );
+      unsubscribe = onSnapshot(
+        q,
+        (snapshot: QuerySnapshot<DocumentData>) => {
+          const docs = snapshot.docs.map((docSnap) => ({
+            ...(docSnap.data() as ProviderAvailability),
+            id: docSnap.id,
+          }));
+          setAvailabilities(docs);
+          setLoading(false);
+        }
+      );
     }
 
-    // Case: specific provider → listen only to that provider’s docs
-    const q = query(
-      collection(db, "availabilities"),
-      where("scopeId", "==", selectedProvider)
-    );
-    const unsubscribeOne = onSnapshot(
-      q,
-      (snapshot: QuerySnapshot<DocumentData>) => {
-        const docs: ProviderAvailability[] = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data() as ProviderAvailability;
-          return {
-            ...data,
-            id: docSnap.id,
-          };
-        });
-        setAvailabilities(docs);
-        setLoading(false);
-      }
-    );
-    return () => unsubscribeOne();
-  }, [selectedProvider, availabilityStore, providers]);
+    // Cleanup listener on unmount or provider change
+    return () => unsubscribe();
+  }, [selectedProvider]);  // only re-run when selectedProvider changes
 
   return { availabilities, loading };
 }

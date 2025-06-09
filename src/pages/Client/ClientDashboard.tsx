@@ -1,11 +1,6 @@
 // src/pages/Client/ClientDashboard.tsx
 
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-} from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   useParams,
   useNavigate,
@@ -63,8 +58,9 @@ export default function ClientDashboard() {
 
   // Enriched appointments array
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  // Maps for provider names and type titles
+  // providerId → provider name
   const [provMap, setProvMap] = useState<Record<string, string>>({});
+  // typeId → type title
   const [typeMap, setTypeMap] = useState<Record<string, string>>({});
 
   // Dialog state
@@ -72,10 +68,11 @@ export default function ClientDashboard() {
   const [editing, setEditing] = useState<Appointment | null>(null);
 
   /**
-   * 1) Load & enrich appointments:
-   *    • convert Timestamps → Date
-   *    • fetch provider names
-   *    • fetch appointmentType titles
+   * Load & enrich appointments:
+   * 1. Query appointments where serviceLocationId == locId and clientIds contains the user
+   * 2. Convert Firestore Timestamps → JS Date
+   * 3. Fetch provider names and appointment-type titles
+   * 4. Enrich each appointment with clientName, serviceProviderName, appointmentTypeName
    */
   const loadAppointments = useCallback(async () => {
     if (!user?.uid || !locId) return;
@@ -84,7 +81,7 @@ export default function ClientDashboard() {
     setError(null);
 
     try {
-      // A) Query the raw appointments
+      // A) Raw appointments query
       const apptQuery = query(
         collection(db, "appointments"),
         where("serviceLocationId", "==", locId),
@@ -92,16 +89,16 @@ export default function ClientDashboard() {
       );
       const apptSnap = await getDocs(apptQuery);
 
-      // B) Convert each doc, turning Timestamps into JS Dates
+      // B) Convert to Appointment[], handling Timestamps
       const rawList: Appointment[] = apptSnap.docs.map((snap) => {
         const data = snap.data() as any;
-        const maybeTs = (v: any) =>
-          v instanceof Timestamp ? v.toDate() : v;
+        const toDate = (v: any) =>
+          v instanceof Timestamp ? v.toDate() : new Date(v);
         return {
           id: snap.id,
-          ...data,
-          startTime: maybeTs(data.startTime),
-          endTime: maybeTs(data.endTime),
+          ...(data as Omit<Appointment, "id">),
+          startTime: toDate(data.startTime),
+          endTime: toDate(data.endTime),
         } as Appointment;
       });
 
@@ -119,7 +116,7 @@ export default function ClientDashboard() {
           "(Unnamed Provider)";
       });
 
-      // D) Fetch appointment‐type titles (by serviceLocationId)
+      // D) Fetch appointment-type titles
       const typeQuery = query(
         collection(db, "appointmentTypes"),
         where("serviceLocationId", "==", locId)
@@ -131,15 +128,14 @@ export default function ClientDashboard() {
         tMap[snap.id] = d.title || "(Unnamed Type)";
       });
 
-      // E) Enrich each appointment
+      // E) Enrich appointments
       const enriched = rawList.map((a) => ({
         ...a,
         clientName: `${user.firstName} ${user.lastName}`,
-        serviceProviderName: a.serviceProviderIds
-          ?.map((id) => pMap[id] || "(Any)")
+        serviceProviderName: (a.serviceProviderIds ?? [])
+          .map((id) => pMap[id] || "(Any)")
           .join(", "),
-        appointmentTypeName:
-          tMap[a.appointmentTypeId] || "(Unknown Type)",
+        appointmentTypeName: tMap[a.appointmentTypeId] || "(Unknown Type)",
       }));
 
       setAppointments(enriched);
@@ -157,7 +153,7 @@ export default function ClientDashboard() {
     loadAppointments();
   }, [loadAppointments]);
 
-  /** 2) Handlers for edit/save/delete */
+  /** Handlers for edit, save, delete */
   const handleEdit = (appt: Appointment) => {
     setEditing(appt);
     setDialogOpen(true);
@@ -183,7 +179,7 @@ export default function ClientDashboard() {
     }
   };
 
-  /** 3) Guards & redirects */
+  /** Redirects / Guards */
   if (authLoading) {
     return (
       <Box textAlign="center" mt={8}>
@@ -196,16 +192,11 @@ export default function ClientDashboard() {
     return <Navigate to="/" replace />;
   }
 
-  /** 4) Partition into upcoming vs past */
+  /** Partition into upcoming vs past */
   const now = Date.now();
-  const upcoming = appointments.filter(
-    (a) => a.startTime.getTime() >= now
-  );
-  const past = appointments.filter(
-    (a) => a.startTime.getTime() < now
-  );
+  const upcoming = appointments.filter((a) => a.startTime.getTime() >= now);
+  const past = appointments.filter((a) => a.startTime.getTime() < now);
 
-  /** 5) Render */
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
       <Typography variant="h4" align="center" gutterBottom>
@@ -223,7 +214,6 @@ export default function ClientDashboard() {
         Upcoming Appointments
       </Typography>
       <Divider sx={{ mb: 2 }} />
-
       {loading ? (
         <Box textAlign="center" mt={4}>
           <CircularProgress />
@@ -239,7 +229,7 @@ export default function ClientDashboard() {
           onViewAssessment={(a) =>
             navigate(`/client/${locId}/appointments/${a.id}`)
           }
-          showStatusColumn={true}
+          showStatusColumn
         />
       )}
 
@@ -248,7 +238,6 @@ export default function ClientDashboard() {
         Past Appointments
       </Typography>
       <Divider sx={{ mb: 2 }} />
-
       {past.length === 0 ? (
         <Typography>No past appointments.</Typography>
       ) : (
@@ -260,7 +249,7 @@ export default function ClientDashboard() {
           onViewAssessment={(a) =>
             navigate(`/client/${locId}/appointments/${a.id}`)
           }
-          showStatusColumn={true}
+          showStatusColumn
         />
       )}
 
@@ -294,10 +283,10 @@ export default function ClientDashboard() {
             ([id, title]) => ({ id, label: title })
           )}
           canEditClient={false}
-          canEditProvider={true}
-          canEditAppointmentType={true}
-          canEditDateTime={true}
-          canCancel={true}
+          canEditProvider
+          canEditAppointmentType
+          canEditDateTime
+          canCancel
         />
       )}
     </Container>

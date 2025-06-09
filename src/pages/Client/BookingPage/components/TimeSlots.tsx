@@ -1,3 +1,4 @@
+// src\pages\Client\BookingPage\components\TimeSlots.tsx
 import React from "react";
 import { Stack, Button, Alert, Typography } from "@mui/material";
 import type { DailySlot } from "../../../models/Availability";

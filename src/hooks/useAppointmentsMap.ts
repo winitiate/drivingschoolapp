@@ -1,5 +1,3 @@
-// src/hooks/useAppointmentsMap.ts
-
 import { useEffect, useState } from "react";
 import {
   collection,
@@ -8,6 +6,7 @@ import {
   onSnapshot,
   QuerySnapshot,
   DocumentData,
+  Timestamp,
 } from "firebase/firestore";
 import dayjs from "dayjs";
 import { db } from "../firebase";
@@ -15,23 +14,15 @@ import type { Appointment } from "../models/Appointment";
 import type { FirestoreAppointmentStore } from "../data/FirestoreAppointmentStore";
 
 /**
- * Returns a Map keyed by “YYYY-MM-DD” → Appointment[] for all appointments
- * at the given service location in the next 30 days (or beyond). Listens
- * in real time: whenever any appointment is added/updated/deleted,
- * the callback re‐builds the Map and updates state.
- *
- * @param providers         – List of providers belonging to this location
- * @param selectedProvider  – A specific provider ID, or "any"
- * @param apptStore         – FirestoreAppointmentStore instance (included only for dependency tracking)
- * @param locId             – The current service location’s ID
- * @param next30            – Array of Dayjs objects representing the next 30 calendar days
+ * Builds and maintains a real‐time Map<string, Appointment[]> keyed by YYYY-MM-DD.
+ * Accepts `next30` as an array of either Dayjs or ISO‐format strings.
  */
 export function useAppointmentsMap(
-  providers: { id: string }[],
+  providers: { id: string; name?: string }[],
   selectedProvider: string,
   apptStore: FirestoreAppointmentStore,
   locId: string,
-  next30: dayjs.Dayjs[]
+  next30: (string | dayjs.Dayjs)[]
 ) {
   const [apptsByDate, setApptsByDate] = useState<Map<string, Appointment[]>>(new Map());
 
@@ -41,64 +32,65 @@ export function useAppointmentsMap(
       return;
     }
 
-    // Build a query for all appointments at this location
-    const q = query(
+    // Normalize next30 into plain date strings
+    const dateKeys = next30.map((d) =>
+      typeof d === "string" ? d : d.format("YYYY-MM-DD")
+    );
+
+    // Base query: all appointments at this location
+    let q = query(
       collection(db, "appointments"),
       where("serviceLocationId", "==", locId)
     );
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot: QuerySnapshot<DocumentData>) => {
-        // Convert each document into an Appointment object,
-        // ensuring Timestamps become Date objects if needed
-        const allDocs: Appointment[] = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data() as Appointment;
-          return {
-            ...data,
-            id: docSnap.id,
-            startTime:
-              typeof (data.startTime as any)?.toDate === "function"
-                ? (data.startTime as any).toDate()
-                : new Date(data.startTime as string),
-            endTime:
-              typeof (data.endTime as any)?.toDate === "function"
-                ? (data.endTime as any).toDate()
-                : new Date(data.endTime as string),
-          };
-        });
+    // If filtering by provider:
+    if (selectedProvider !== "any") {
+      q = query(q, where("serviceProviderIds", "array-contains", selectedProvider));
+    }
 
-        // Filter by selectedProvider if not "any"
-        const filtered =
-          selectedProvider === "any"
-            ? allDocs
-            : allDocs.filter((a) => a.serviceProviderIds.includes(selectedProvider));
+    // Listen for real‐time updates
+    const unsub = onSnapshot(q, (snapshot: QuerySnapshot<DocumentData>) => {
+      // Convert to Appointment[] and fix Timestamps
+      const all: Appointment[] = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          startTime:
+            data.startTime instanceof Timestamp
+              ? data.startTime.toDate()
+              : new Date(data.startTime as string),
+          endTime:
+            data.endTime instanceof Timestamp
+              ? data.endTime.toDate()
+              : new Date(data.endTime as string),
+        } as Appointment;
+      });
 
-        // Further filter to only next30 days
-        const dateKeys = next30.map((d) => d.format("YYYY-MM-DD"));
-        const next30Filtered = filtered.filter((a) => {
-          const dayKey = dayjs(a.startTime).format("YYYY-MM-DD");
-          return dateKeys.includes(dayKey);
-        });
+      // Build the map
+      const map = new Map<string, Appointment[]>();
+      all.forEach((appt) => {
+        const key = dayjs(appt.startTime).format("YYYY-MM-DD");
+        if (dateKeys.includes(key)) {
+          if (!map.has(key)) map.set(key, []);
+          map.get(key)!.push(appt);
+        }
+      });
 
-        // Build a Map keyed by "YYYY-MM-DD" → Appointment[]
-        const map = new Map<string, Appointment[]>();
-        next30Filtered.forEach((appt) => {
-          const dayKey = dayjs(appt.startTime).format("YYYY-MM-DD");
-          if (!map.has(dayKey)) {
-            map.set(dayKey, []);
-          }
-          map.get(dayKey)!.push(appt);
-        });
-
-        setApptsByDate(map);
-      }
-    );
+      setApptsByDate(map);
+    });
 
     return () => {
-      unsubscribe();
+      unsub();
     };
-  }, [providers, selectedProvider, apptStore, locId, next30]);
+  }, [
+    // include providers’ IDs so if your list changes it reloads
+    providers.map((p) => p.id).join(","),
+    selectedProvider,
+    locId,
+    // stringify dateKeys so changing only the dates triggers reload
+    next30.map((d) => (typeof d === "string" ? d : d.format("YYYY-MM-DD"))).join(","),
+  ]);
 
   return apptsByDate;
 }

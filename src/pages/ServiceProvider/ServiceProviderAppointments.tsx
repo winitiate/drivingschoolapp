@@ -91,7 +91,7 @@ export default function ServiceProviderAppointments() {
               setProviderName(fullName || "Service Provider");
             }
           } catch {
-            /* ignore permission errors */
+            // ignore permission errors
           }
         }
       } catch (e: any) {
@@ -113,7 +113,6 @@ export default function ServiceProviderAppointments() {
       const appointmentsQuery = query(
         collection(db, "appointments"),
         where("serviceLocationId", "in", providerLocationIds.slice(0, 10)),
-        // ← **ARRAY-CONTAINS** on the *array* field:
         where("serviceProviderIds", "array-contains", serviceProviderId)
       );
       const apptSnap = await getDocs(appointmentsQuery);
@@ -178,12 +177,8 @@ export default function ServiceProviderAppointments() {
           typeMap.set(t.id, t.title);
         }
       });
-      // Keep a list for any FormDialogs, but we’ll pull the name from the map below
       setTypes(
-        Array.from(typeMap.entries()).map(([id, title]) => ({
-          id,
-          label: title,
-        }))
+        Array.from(typeMap.entries()).map(([id, title]) => ({ id, label: title }))
       );
 
       // ── E) Enrich and set
@@ -193,7 +188,6 @@ export default function ServiceProviderAppointments() {
           .map((cid) => clientMap[cid] || "Unknown Client")
           .join(", "),
         serviceProviderName: providerName,
-        // ← **FALL BACK** to a visible dash if no type found
         appointmentTypeName: typeMap.get(a.appointmentTypeId) ?? "—",
       }));
 
