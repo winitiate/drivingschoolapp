@@ -1,65 +1,47 @@
 // src/pages/Client/BookingPage/components/SquarePayForm.tsx
 
 import React, { useEffect, useRef, useState } from "react";
-import { CircularProgress, Box, Alert, Button } from "@mui/material";
-import { createPayment } from "../../../../api/createPayment";
+import {
+  CircularProgress,
+  Box,
+  Alert,
+  Button,
+} from "@mui/material";
+import { createPayment, CreatePaymentResponse } from "../../../../services/SquareBillingService";
 
 /**
- * The shape of data returned by our server’s createPayment endpoint.
- * It looks like:
- * {
- *   success: true,
- *   payment: {
- *     paymentId: string,
- *     status: "COMPLETED" | "PENDING",
- *     // (other fields like receiptUrl, feesCents, etc., if you extend the backend)
- *   }
- * }
+ * SquarePayForm.tsx
+ *
+ * Renders the Square Web Payments SDK card form, handles tokenization,
+ * and then calls our backend to actually create the payment.
+ *
+ * We collect:
+ *  - appointmentId      (required)  → which appointment doc to charge for
+ *  - serviceLocationId  (required)  → which location’s Square credentials to use
+ *  - amountCents        (required)  → how much to charge, in cents
+ *
+ * When the user clicks “Pay”, we:
+ *  1. Tokenize the card (gets a `nonce`)
+ *  2. Call createPayment({ appointmentId, toBeUsedBy, amountCents, nonce })
+ *  3. If success, invoke onSuccess with the transaction ID
  */
-interface CreatePaymentResponse {
-  success: boolean;
-  payment: {
-    paymentId: string;
-    status: "COMPLETED" | "PENDING";
-    // You can add more fields here if your backend returns them,
-    // e.g. receiptUrl?: string;
-    //      feesCents?: number;
-    //      netTotalCents?: number;
-    //      cardBrand?: string;
-    //      panSuffix?: string;
-    //      detailsUrl?: string;
-  };
-}
 
-/**
- * What we pass back to BookingPage’s handlePaid callback.
- * transactionId is the Square payment ID; others are optional.
- */
 interface PaymentResult {
   transactionId: string;
-  receiptUrl?: string;
-  feesCents?: number;
-  netTotalCents?: number;
-  cardBrand?: string;
-  panSuffix?: string;
-  detailsUrl?: string;
+  // you can extend this with receiptUrl, feesCents, etc.
 }
 
 interface Props {
-  applicationId:     string;
-  locationId?:       string;
-  appointmentId:     string;       // ← REQUIRED prop for the appointment document ID
-  amountCents:       number;
-  appointmentTypeId: string;
-  serviceLocationId: string;
-  /**
-   * Called when payment succeeds, passing a PaymentResult
-   */
+  applicationId:     string;    // Square Web SDK application ID
+  locationId?:       string;    // (optional) Square location ID for card form
+  appointmentId:     string;    // ID of the appointment document
+  amountCents:       number;    // amount to charge, in cents
+  serviceLocationId: string;    // the “toBeUsedBy” ID for lookup
   onSuccess:         (paymentResult: PaymentResult) => void;
   onCancel:          () => void;
 }
 
-/* Let TypeScript know Square is loaded on window */
+/* Tell TypeScript that `window.Square` exists after loading the SDK script */
 declare global {
   interface Window {
     Square?: any;
@@ -69,9 +51,8 @@ declare global {
 export default function SquarePayForm({
   applicationId,
   locationId,
-  appointmentId,      // ← Destructure the new prop
+  appointmentId,
   amountCents,
-  appointmentTypeId,
   serviceLocationId,
   onSuccess,
   onCancel,
@@ -80,21 +61,18 @@ export default function SquarePayForm({
   const [initialising, setInitialising] = useState(true);
   const [paying,       setPaying]       = useState(false);
 
-  /** Live Square objects */
-  const paymentsRef = useRef<any>(null);
-  const cardRef     = useRef<any>(null);
+  /** References to the SDK objects */
+  const paymentsRef      = useRef<any>(null);
+  const cardRef          = useRef<any>(null);
+  const attachInFlight   = useRef(false);
 
-  /** Prevents two concurrent `.attach()` calls */
-  const attachInFlightRef = useRef(false);
-
-  /* ───────── attach card safely ───────── */
+  /** Attaches the Square Card element to the DOM */
   const attachCard = async () => {
-    if (cardRef.current || attachInFlightRef.current) return;
-    attachInFlightRef.current = true;
+    if (cardRef.current || attachInFlight.current) return;
+    attachInFlight.current = true;
 
-    // Clear any stale DOM in strict mode double-mount scenarios
-    const holder = document.getElementById("card-container");
-    if (holder) holder.innerHTML = "";
+    const container = document.getElementById("card-container");
+    if (container) container.innerHTML = "";
 
     if (!paymentsRef.current) {
       paymentsRef.current = window.Square.payments(applicationId, locationId);
@@ -103,13 +81,13 @@ export default function SquarePayForm({
     const card = await paymentsRef.current.card();
     await card.attach("#card-container");
     cardRef.current = card;
-    attachInFlightRef.current = false;
+    attachInFlight.current = false;
   };
 
-  /* ───────── load Square SDK & attach once ───────── */
+  /** Load the Square Web Payments SDK script and attach the card */
   useEffect(() => {
-    // Simple sanity check for application ID prefix
-    if (!/^sandbox-|^sq0idp-/.test(applicationId)) {
+    // Validate the App ID
+    if (!/^sandbox-|^sq0(idp|atp)-/.test(applicationId)) {
       setError("Invalid Square applicationId");
       setInitialising(false);
       return;
@@ -119,28 +97,26 @@ export default function SquarePayForm({
       try {
         await attachCard();
       } catch (e: any) {
-        setError(e?.message ?? "Failed to initialise payment form");
+        setError(e.message || "Failed to initialise payment form");
       } finally {
         setInitialising(false);
       }
     };
 
     if (window.Square) {
-      // Already loaded (likely re-open of dialog)
       start();
     } else {
-      // Inject the SDK script once
-      const existing = document.getElementById("sq-sdk") as HTMLScriptElement | null;
+      const existing = document.getElementById("sq-sdk") as HTMLScriptElement;
       if (existing) {
         existing.addEventListener("load", start, { once: true });
       } else {
         const script = document.createElement("script");
-        script.id = "sq-sdk";
+        script.id  = "sq-sdk";
         script.src = applicationId.startsWith("sandbox-")
           ? "https://sandbox.web.squarecdn.com/v1/square.js"
           : "https://web.squarecdn.com/v1/square.js";
-        script.async = true;
-        script.onload = start;
+        script.async   = true;
+        script.onload  = start;
         script.onerror = () => {
           setError("Failed to load Square SDK");
           setInitialising(false);
@@ -149,18 +125,18 @@ export default function SquarePayForm({
       }
     }
 
-    /* ───────── cleanup on unmount ───────── */
+    // Cleanup on unmount
     return () => {
       if (cardRef.current?.destroy) {
         cardRef.current.destroy();
         cardRef.current = null;
       }
-      const holder = document.getElementById("card-container");
-      if (holder) holder.innerHTML = "";
+      const container = document.getElementById("card-container");
+      if (container) container.innerHTML = "";
     };
   }, [applicationId, locationId]);
 
-  /* ───────── payment handler ───────── */
+  /** Handle the Pay button click */
   const pay = async () => {
     if (!cardRef.current || paying) return;
 
@@ -168,50 +144,44 @@ export default function SquarePayForm({
     setError(null);
 
     try {
-      // Tokenize the card
+      // 1️⃣ Tokenize the card
       const { token, status } = await cardRef.current.tokenize();
       if (status !== "OK") throw new Error("Card tokenisation failed");
 
-      // Call our backend to create a payment
+      // 2️⃣ Call our backend createPayment with the new `toBeUsedBy` field
       const resp: CreatePaymentResponse = await createPayment({
-        appointmentId,     // ← Include the appointmentId now
-        ownerType:        "serviceLocation",
-        ownerId:          serviceLocationId,
-        appointmentTypeId,
+        appointmentId,
+        toBeUsedBy: serviceLocationId,
         amountCents,
-        nonce:            token,
+        nonce:       token,
       });
 
       if (!resp.success) {
         throw new Error("Payment failed on server");
       }
-
       const paymentId = resp.payment.paymentId;
       if (!paymentId) {
-        throw new Error("Payment succeeded but paymentId is missing");
+        throw new Error("Payment succeeded but no paymentId was returned");
       }
 
-      // Build the result to return to BookingPage
-      const paymentResult: PaymentResult = {
-        transactionId: paymentId,
-        // These optional fields can be populated if your backend returns them
-        // receiptUrl:    resp.payment.receiptUrl,
-        // feesCents:     resp.payment.feesCents,
-        // netTotalCents: resp.payment.netTotalCents,
-        // cardBrand:     resp.payment.cardBrand,
-        // panSuffix:     resp.payment.panSuffix,
-        // detailsUrl:    resp.payment.detailsUrl,
-      };
-
-      onSuccess(paymentResult);
+      // 3️⃣ Notify the parent component
+      onSuccess({ transactionId: paymentId });
     } catch (e: any) {
-      setError(e?.message ?? "Payment failed");
+      setError(e.message || "Payment failed");
     } finally {
       setPaying(false);
     }
   };
 
-  /* ───────── UI ───────── */
+  // Show loading spinner while initialising
+  if (initialising) {
+    return (
+      <Box textAlign="center" py={4}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return (
     <Box>
       {error && (
@@ -222,7 +192,7 @@ export default function SquarePayForm({
 
       <div id="card-container" />
 
-      {initialising ? (
+      {paying ? (
         <Box textAlign="center" mt={2}>
           <CircularProgress />
         </Box>
@@ -235,14 +205,15 @@ export default function SquarePayForm({
             onClick={pay}
             disabled={paying}
           >
-            {paying ? (
-              <CircularProgress size={24} />
-            ) : (
-              `PAY $${(amountCents / 100).toFixed(2)}`
-            )}
+            {`PAY $${(amountCents / 100).toFixed(2)}`}
           </Button>
 
-          <Button fullWidth sx={{ mt: 1 }} onClick={onCancel} disabled={paying}>
+          <Button
+            fullWidth
+            sx={{ mt: 1 }}
+            onClick={onCancel}
+            disabled={paying}
+          >
             Cancel
           </Button>
         </>

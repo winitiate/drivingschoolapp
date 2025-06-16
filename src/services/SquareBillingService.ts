@@ -1,50 +1,45 @@
 // src/services/SquareBillingService.ts
 
-import { BillingService } from './BillingService';
-import { Client, CreateCustomerResponse, CreatePaymentResponse, CreateSubscriptionResponse } from 'square';
+/**
+ * SquareBillingService.ts
+ *
+ * Production‐only wrapper around the `createPayment` Firebase callable.
+ *
+ * IMPORTANT: make sure the `functions` import path is exactly "../firebase",
+ * so that it points at src/firebase.ts and yields the real Functions instance.
+ */
 
-const squareClient = new Client({
-  accessToken: import.meta.env.VITE_SQUARE_ACCESS_TOKEN,
-  environment: import.meta.env.VITE_SQUARE_ENVIRONMENT === 'production'
-    ? 'production'
-    : 'sandbox',
-});
+import { httpsCallable } from "firebase/functions";
+// 🔥 Correct relative path: services/* → firebase.ts is one level up
+import { functions } from "../firebase";
 
-export class SquareBillingService implements BillingService {
-  private customersApi     = squareClient.customersApi;
-  private paymentsApi      = squareClient.paymentsApi;
-  private subscriptionsApi = squareClient.subscriptionsApi;
+export interface CreatePaymentRequest {
+  appointmentId: string;
+  toBeUsedBy:    string;
+  amountCents:   number;
+  nonce:         string;
+}
 
-  async createCustomer(userId: string, email: string): Promise<string> {
-    // …same as before…
-  }
+export interface CreatePaymentResponse {
+  success: boolean;
+  payment: {
+    paymentId: string;
+    status:    "COMPLETED" | "PENDING";
+  };
+}
 
-  async chargeOneTime(
-    customerId: string,
-    amountCents: number,
-    currency: string,
-    description: string
-  ): Promise<string> {
-    // …same as before…
-  }
-
-  async createSubscription(
-    customerId: string,
-    priceId: string,
-    trialDays?: number
-  ): Promise<string> {
-    const idempotencyKey = customerId + '-' + Date.now();
-    const resp: CreateSubscriptionResponse = await this.subscriptionsApi.createSubscription({
-      idempotencyKey,
-      locationId: import.meta.env.VITE_SQUARE_LOCATION_ID,
-      planId: priceId,
-      customerId,
-      ...(trialDays ? { trialPeriodDays: trialDays } : {}),
-    });
-    // …rest unchanged…
-  }
-
-  async cancelSubscription(subscriptionId: string): Promise<void> {
-    // …unchanged…
-  }
+/**
+ * Calls the `createPayment` callable Function.
+ * @param data  appointmentId, toBeUsedBy, amountCents, nonce
+ */
+export async function createPayment(
+  data: CreatePaymentRequest
+): Promise<CreatePaymentResponse> {
+  // functions MUST be the Firebase Functions instance from src/firebase.ts
+  const fn = httpsCallable<CreatePaymentRequest, CreatePaymentResponse>(
+    functions,
+    "createPayment"
+  );
+  const res = await fn(data);
+  return res.data;
 }

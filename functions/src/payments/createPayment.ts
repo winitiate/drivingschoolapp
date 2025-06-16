@@ -1,87 +1,130 @@
 // functions/src/payments/createPayment.ts
 
-import { onRequest } from "firebase-functions/v2/https";
-import { getFirestore } from "firebase-admin/firestore";
-import { SquareGateway } from "./gateways/SquareGateway";
-import { v4 as uuid } from "uuid";
+/**
+ * createPayment.ts
+ *
+ * Firebase v2 callable Function to charge via Square,
+ * looking up credentials by toBeUsedBy and forcing CAD
+ * in sandbox (to match your merchant).
+ */
 
-interface ReqBody {
-  appointmentId: string;            // ← pass the appointment document ID
-  ownerType: "serviceLocation" | "business" | "serviceProvider";
-  ownerId: string;
-  appointmentTypeId: string;
-  amountCents: number;
-  nonce: string;
+import { onCall, CallableRequest, HttpsError } from "firebase-functions/v2/https";
+import * as admin from "firebase-admin";
+import { randomUUID } from "crypto";
+import { FirestorePaymentCredentialStore } from "../utils/FirestorePaymentCredentialStore";
+import { PaymentCredentialStore }            from "../utils/PaymentCredentialStore";
+
+// 1️⃣ Initialize Admin SDK once
+if (!admin.apps.length) admin.initializeApp();
+
+interface PaymentData {
+  appointmentId: string;
+  toBeUsedBy:    string;
+  amountCents:   number;
+  nonce:         string;
+}
+interface PaymentResponse {
+  success: boolean;
+  payment: {
+    paymentId: string;
+    status:    "COMPLETED" | "PENDING";
+  };
 }
 
-export const createPayment = onRequest({ cors: true }, async (req, res) => {
-  // Handle CORS pre-flight
-  if (req.method === "OPTIONS") {
-    res.sendStatus(204);
-    return;
-  }
+export const createPayment = onCall(
+  {
+    memory:         "256MiB",
+    timeoutSeconds: 30,
+  },
+  async (req: CallableRequest<PaymentData>): Promise<PaymentResponse> => {
+    // Log what we received
+    console.log("💥 createPayment called with:", req.data);
 
-  // Only POST allowed
-  if (req.method !== "POST") {
-    res.status(405).json({ error: "Method Not Allowed" });
-    return;
-  }
+    // 2️⃣ Validate inputs
+    const { appointmentId, toBeUsedBy, amountCents, nonce } = req.data || {};
+    if (
+      typeof appointmentId !== "string" ||
+      typeof toBeUsedBy    !== "string" ||
+      typeof amountCents   !== "number" ||
+      typeof nonce         !== "string"
+    ) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Required: appointmentId (string), toBeUsedBy (string), amountCents (number), nonce (string)."
+      );
+    }
 
-  // Validate body
-  const body = req.body as Partial<ReqBody>;
-  const {
-    appointmentId,
-    ownerType,
-    ownerId,
-    appointmentTypeId,
-    amountCents,
-    nonce,
-  } = body;
+    // 3️⃣ Lookup that location’s Square creds
+    const store: PaymentCredentialStore = new FirestorePaymentCredentialStore();
+    const cred = await store.getByConsumer("square", toBeUsedBy);
+    console.log("🎯 Credential fetched:", cred);
+    if (!cred) {
+      throw new HttpsError("not-found", `No credentials for toBeUsedBy="${toBeUsedBy}".`);
+    }
 
-  if (
-    !appointmentId ||
-    !ownerType ||
-    !ownerId ||
-    !appointmentTypeId ||
-    typeof amountCents !== "number" ||
-    !nonce
-  ) {
-    res.status(400).json({ error: "Missing or invalid field" });
-    return;
-  }
+    const { applicationId, accessToken } = cred.credentials;
+    if (!applicationId || !accessToken) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Misconfigured credentials (missing applicationId or accessToken)."
+      );
+    }
 
-  const gateway = new SquareGateway();
+    // 4️⃣ Pick currency: ALWAYS CAD for sandbox
+    const currency = applicationId.startsWith("sandbox-") ? "CAD" : "USD";
+    console.log("🌍 Using currency:", currency);
 
-  try {
-    // 1️⃣ Charge the card via Square
-    const result = await gateway.createPayment({
-      ownerType,
-      ownerId,
-      appointmentTypeId,
-      amountCents,
-      nonce,
-      idempotencyKey: uuid(),
+    // 5️⃣ Load the legacy Square SDK so Client & Environment exist
+    // @ts-ignore
+    const { Client, Environment } = require("square/legacy");
+    if (typeof Client !== "function" || !Environment) {
+      console.error("Square/legacy exports are invalid", { Client, Environment });
+      throw new HttpsError("internal", "Square SDK failed to load.");
+    }
+
+    // 6️⃣ Instantiate Square client
+    const squareClient = new Client({
+      environment: applicationId.startsWith("sandbox-")
+        ? Environment.Sandbox
+        : Environment.Production,
+      accessToken,
     });
 
-    // 2️⃣ Write the payment metadata into Firestore under the appointment
-    const db = getFirestore();
-    const apptRef = db.collection("appointments").doc(appointmentId);
+    // 7️⃣ Create the payment
+    let payment: any;
+    try {
+      console.log("🔔 Calling Square with:", {
+        sourceId: nonce,
+        idempotencyKey: randomUUID(),
+        amountMoney: { amount: BigInt(amountCents), currency },
+      });
 
-    // Store paymentId and amountCents in a 'metadata' sub‐field
-    await apptRef.set(
-      {
-        metadata: {
-          paymentId: result.paymentId,
-          amountCents: amountCents,
+      const resp = await squareClient.paymentsApi.createPayment({
+        sourceId:       nonce,
+        idempotencyKey: randomUUID(),
+        amountMoney: {
+          amount:   BigInt(amountCents),
+          currency,
         },
-      },
-      { merge: true }
-    );
+      });
+      payment = resp.result.payment;
+    } catch (err: any) {
+      console.error("🚨 Square API error:", err);
+      throw new HttpsError("internal", err.message || "Square API error");
+    }
 
-    // 3️⃣ Respond with success and the payment details
-    res.json({ success: true, payment: result });
-  } catch (err: any) {
-    console.error("createPayment error:", err);
-    res.status(500).json({ error: err.message || "Internal Error" });
+    if (!payment) {
+      throw new HttpsError("internal", "Square did not return a payment object.");
+    }
+
+    // 8️⃣ Success
+    console.log("✅ Payment succeeded:", payment.id, payment.status);
+    return {
+      success: true,
+      payment: {
+        paymentId: payment.id,
+        status:    payment.status as "COMPLETED" | "PENDING",
+      },
+    };
   }
-});
+);

@@ -1,5 +1,15 @@
 // src/data/FirestorePaymentCredentialStore.ts
 
+/**
+ * FirestorePaymentCredentialStore.ts
+ *
+ * Firestore-backed implementation of PaymentCredentialStore.
+ *
+ * - getByOwner(): queries provider/ownerType/ownerId AND toBeUsedBy==ownerId
+ * - save(): upserts all fields, encrypting accessToken at rest,
+ *           merging so you never lose extra fields.
+ */
+
 import { PaymentCredential } from "../models/PaymentCredential";
 import { PaymentCredentialStore } from "./PaymentCredentialStore";
 import { db } from "../firebase";
@@ -28,11 +38,13 @@ export class FirestorePaymentCredentialStore
     ownerType: string,
     ownerId: string
   ): Promise<PaymentCredential | null> {
+    // Query by provider, ownerType, ownerId AND ensure toBeUsedBy = ownerId
     const q = query(
       this.collRef,
       where("provider", "==", provider),
       where("ownerType", "==", ownerType),
-      where("ownerId", "==", ownerId)
+      where("ownerId", "==", ownerId),
+      where("toBeUsedBy", "==", ownerId)
     );
     const snap = await getDocs(q);
     if (snap.empty) return null;
@@ -40,12 +52,13 @@ export class FirestorePaymentCredentialStore
     const docSnap = snap.docs[0];
     const raw = docSnap.data() as PaymentCredential;
 
+    // Decrypt the accessToken before returning
     return {
       id: docSnap.id,
       ...raw,
       credentials: {
         ...raw.credentials,
-        accessToken: raw.credentials?.accessToken
+        accessToken: raw.credentials.accessToken
           ? decrypt(raw.credentials.accessToken)
           : "",
       },
@@ -55,25 +68,29 @@ export class FirestorePaymentCredentialStore
   async save(credential: PaymentCredential): Promise<void> {
     const now = Timestamp.now();
 
+    // Use existing docRef if id is present, else generate a new one
     const docRef: DocumentReference =
       credential.id !== undefined
         ? doc(db, COLLECTION, credential.id)
         : doc(this.collRef);
 
-    const { id, ...rest } = credential; // remove id from the payload
+    // Strip out `id`, Firestore key lives in docRef.id
+    const { id, ...rest } = credential;
 
-    const payload: PaymentCredential = {
+    const payload: Omit<PaymentCredential, "id"> = {
       ...rest,
+      // Encrypt the accessToken at rest
       credentials: {
-        ...credential.credentials,
-        accessToken: credential.credentials.accessToken
-          ? encrypt(credential.credentials.accessToken)
+        ...rest.credentials,
+        accessToken: rest.credentials.accessToken
+          ? encrypt(rest.credentials.accessToken)
           : "",
       },
-      createdAt: credential.createdAt || now,
+      createdAt: rest.createdAt || now,
       updatedAt: now,
     };
 
+    // Merge so we don’t clobber any unrelated fields
     await setDoc(docRef, payload, { merge: true });
   }
 }

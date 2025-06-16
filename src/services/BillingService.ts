@@ -1,39 +1,45 @@
-// src/services/BillingService.ts
+// src/services/SquareBillingService.ts
 
 /**
- * A provider-agnostic billing interface.
- * Implement this with Stripe, Square, or any other platform.
+ * SquareBillingService.ts
+ *
+ * Production‐only wrapper around your deployed createPayment function.
+ * Uses the Firebase Functions SDK to call the live endpoint.
  */
-export interface BillingService {
-  /**
-   * Create or fetch a customer record for a user.
-   * @returns the provider’s customer ID
-   */
-  createCustomer(userId: string, email: string): Promise<string>;
 
-  /**
-   * Charge a one-time payment.
-   * @returns the resulting payment ID
-   */
-  chargeOneTime(
-    customerId: string,
-    amountCents: number,
-    currency: string,
-    description: string
-  ): Promise<string>;
+import { httpsCallable } from "firebase/functions";
+import { functions } from "../firebase";
 
-  /**
-   * Start a recurring subscription to a given price/plan.
-   * @returns the resulting subscription ID
-   */
-  createSubscription(
-    customerId: string,
-    priceId: string,
-    trialDays?: number
-  ): Promise<string>;
+export interface CreatePaymentRequest {
+  appointmentId: string;
+  ownerType: string;
+  ownerId: string;
+  toBeUsedBy: string;
+  appointmentTypeId: string;
+  amountCents: number;
+  nonce: string;
+}
 
-  /**
-   * Cancel an active subscription.
-   */
-  cancelSubscription(subscriptionId: string): Promise<void>;
+export interface CreatePaymentResponse {
+  success: boolean;
+  payment: {
+    paymentId: string;
+    status: "COMPLETED" | "PENDING";
+    // any other fields your backend returns
+  };
+}
+
+/**
+ * Calls the live createPayment Cloud Function.
+ * This will hit your deployed endpoint—no emulator involved.
+ */
+export async function createPayment(
+  data: CreatePaymentRequest
+): Promise<CreatePaymentResponse> {
+  const fn = httpsCallable<CreatePaymentRequest, CreatePaymentResponse>(
+    functions,
+    "createPayment"
+  );
+  const res = await fn(data);
+  return res.data;
 }
