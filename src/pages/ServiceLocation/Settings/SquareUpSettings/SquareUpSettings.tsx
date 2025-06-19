@@ -2,13 +2,27 @@
  * SquareUpSettings.tsx
  *
  * Renders a form for configuring SquareUp payment credentials for a
- * service location. On mount, it attempts to fetch an existing credential
- * record from Firestore (by provider, ownerType, ownerId). The form is
- * populated with the retrieved application ID and access token.
+ * service location. On mount, it:
+ *   • Loads any existing Firestore PaymentCredential for this location
+ *     (by provider="square", ownerType="serviceLocation", ownerId=serviceLocationId).
+ *   • Decrypts and populates the form fields:
+ *       – applicationId (public)
+ *       – accessToken   (secret)
+ *       – locationId    (public, required by the Web SDK)
  *
- * On save, if an existing document ID is present, it updates that document;
- * otherwise, it creates a new one. A "toBeUsedBy" field is included in the
- * Firestore record to link these credentials to the specified service location.
+ * On save, it:
+ *   • Builds a PaymentCredential object including:
+ *       – id (for updates) or undefined (for new docs)
+ *       – provider="square", ownerType="serviceLocation", ownerId=serviceLocationId
+ *       – toBeUsedBy=serviceLocationId
+ *       – credentials: { applicationId, accessToken, locationId }
+ *       – createdAt timestamp (preserved on updates)
+ *   • Calls store.save(updatedCredential) to upsert in Firestore,
+ *     encrypting the accessToken at rest.
+ *
+ * This form ensures we collect **all three** fields the front end
+ * needs to initialize Square’s Web SDK (applicationId + locationId)
+ * as well as the secret accessToken that only Functions will decrypt.
  */
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -27,25 +41,28 @@ import { PaymentCredentialStore } from "../../../../data/PaymentCredentialStore"
 import { FirestorePaymentCredentialStore } from "../../../../data/FirestorePaymentCredentialStore";
 
 export default function SquareUpSettings() {
-  // Extract the serviceLocationId from the URL parameters
+  // Pull the serviceLocationId from the route params
   const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
 
-  // Initialize our Firestore-backed store for payment credentials
+  // Memoize our Firestore-backed store instance
   const store: PaymentCredentialStore = useMemo(
     () => new FirestorePaymentCredentialStore(),
     []
   );
 
-  // Local state for the credential record and form fields
-  const [credential, setCredential] = useState<PaymentCredential | null>(null);
-  const [appId, setAppId] = useState<string>("");
-  const [accessToken, setAccessToken] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(true);
-  const [saving, setSaving] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  // Local state: the loaded or new credential record
+  const [credential,    setCredential]    = useState<PaymentCredential | null>(null);
+  // Form fields for all three values
+  const [appId,         setAppId]         = useState<string>("");
+  const [accessToken,   setAccessToken]   = useState<string>("");
+  const [locationId,    setLocationId]    = useState<string>("");
 
-  // On component mount or whenever the serviceLocationId changes,
-  // attempt to load the existing credential document.
+  // Loading / saving / error states
+  const [loading,       setLoading]       = useState<boolean>(true);
+  const [saving,        setSaving]        = useState<boolean>(false);
+  const [error,         setError]         = useState<string | null>(null);
+
+  // On mount / whenever serviceLocationId changes, load existing credential
   useEffect(() => {
     if (!serviceLocationId) return;
 
@@ -54,18 +71,19 @@ export default function SquareUpSettings() {
       setError(null);
 
       try {
-        // Attempt to fetch existing credential by provider, ownerType, and ownerId
+        // Fetch by provider/ownerType/ownerId & toBeUsedBy=serviceLocationId
         const existing = await store.getByOwner(
           "square",
           "serviceLocation",
           serviceLocationId
         );
 
-        // If a record exists, populate our form fields
         if (existing) {
           setCredential(existing);
           setAppId(existing.credentials.applicationId || "");
           setAccessToken(existing.credentials.accessToken || "");
+          // New field: locationId must have been stored unencrypted
+          setLocationId((existing.credentials as any).locationId || "");
         }
       } catch (e: any) {
         setError(e.message);
@@ -75,7 +93,7 @@ export default function SquareUpSettings() {
     })();
   }, [serviceLocationId, store]);
 
-  // Handler to save (create or update) the credential record
+  // When the user clicks “Save”
   const handleSave = async () => {
     if (!serviceLocationId) return;
 
@@ -83,27 +101,27 @@ export default function SquareUpSettings() {
     setError(null);
 
     try {
-      // Build the PaymentCredential object
+      // Build the upsert object
       const updated: PaymentCredential = {
-        // Include the existing document ID for updates; undefined for new records
-        id: credential?.id,
-        provider: "square",
-        ownerType: "serviceLocation",
-        ownerId: serviceLocationId,
-        // New field linking this credential to the location that will use it
-        toBeUsedBy: serviceLocationId,
+        // Preserve id for updates, or leave undefined to create new
+        id:          credential?.id,
+        provider:    "square",
+        ownerType:   "serviceLocation",
+        ownerId:     serviceLocationId,
+        toBeUsedBy:  serviceLocationId,
         credentials: {
           applicationId: appId,
-          accessToken,
+          accessToken,          // will be encrypted by FirestorePaymentCredentialStore
+          locationId,           // new public field
         },
-        // Preserve original creation timestamp if present
-        createdAt: credential?.createdAt,
+        // Preserve createdAt if updating
+        createdAt:    credential?.createdAt,
       };
 
-      // Persist to Firestore: updating if `id` exists, else creating a new doc
+      // Upsert into Firestore
       await store.save(updated);
 
-      // Update local state with the saved record
+      // Reflect saved state in the form
       setCredential(updated);
     } catch (e: any) {
       setError(e.message);
@@ -112,7 +130,7 @@ export default function SquareUpSettings() {
     }
   };
 
-  // Show a loading spinner while fetching initial data
+  // Show spinner while loading
   if (loading) {
     return (
       <Box textAlign="center" py={4}>
@@ -121,7 +139,6 @@ export default function SquareUpSettings() {
     );
   }
 
-  // Main form rendering
   return (
     <Box>
       <Typography variant="h6" gutterBottom>
@@ -143,9 +160,20 @@ export default function SquareUpSettings() {
       />
 
       <TextField
+        label="Square Location ID"
+        fullWidth
+        margin="normal"
+        helperText="Public location identifier for Square Web SDK"
+        value={locationId}
+        onChange={(e) => setLocationId(e.target.value)}
+      />
+
+      <TextField
         label="Square Access Token"
         fullWidth
         margin="normal"
+        type="password"
+        helperText="Secret token (will be encrypted in Firestore)"
         value={accessToken}
         onChange={(e) => setAccessToken(e.target.value)}
       />

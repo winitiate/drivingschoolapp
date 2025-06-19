@@ -1,19 +1,10 @@
-// src/services/index.ts
+/**
+ * index.ts
+ *
+ * Barrel export of all payment/booking services
+ * so you can import from "../services" directly.
+ */
 
-import { BillingService } from './BillingService';
-import { SquareBillingService } from './SquareBillingService';
-// import { StripeBillingService } from './StripeBillingService'; // when you add Stripe
-
-// Read which provider to use from env
-const provider = import.meta.env.VITE_PAYMENT_PROVIDER;
-
-let billingService: BillingService;
-if (provider === 'stripe') {
-  // billingService = new StripeBillingService();
-  throw new Error('StripeBillingService not yet implemented');
-} else {
-  // default to Square
-  billingService = new SquareBillingService();
-}
-
-export default billingService;
+export { bookAppointment }  from "./bookAppointment";
+export { refundPayment }    from "./refundPayment";
+export { cancelAppointment } from "./cancelAppointment";

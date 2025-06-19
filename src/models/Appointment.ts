@@ -1,3 +1,4 @@
+// src\models\Appointment.ts
 import { BaseEntity } from "./BaseEntity";
 import { Timestamp } from "firebase/firestore";
 

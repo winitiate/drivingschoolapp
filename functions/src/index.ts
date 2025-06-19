@@ -1,11 +1,10 @@
-// functions/src/index.ts
-
 /**
- * Entry point for your Cloud Functions.
- * Export each function under its filename; use .js extension to match ESM output.
+ * index.ts
+ *
+ * Fleet of all your Cloud Functions.
  */
 
-export { createPayment } from "./payments/createPayment.js";
-export { cancelAppointment } from "./payments/cancelAppointment.js";
-export { updates } from "./payments/updates.js";
-// …and any other exports you have in src/payments/*
+export { bookAppointment }    from "./handlers/bookAppointment.js";
+export { refundPayment }      from "./handlers/refundPayment.js";
+export { webhookHandler }     from "./handlers/webhookHandler.js";
+// (Remove createAppointment/createPayment handlers if no longer used)
