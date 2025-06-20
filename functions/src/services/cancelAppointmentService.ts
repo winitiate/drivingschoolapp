@@ -1,14 +1,27 @@
 // functions/src/services/cancelAppointmentService.ts
 
+/**
+ * cancelAppointmentService
+ *
+ * Shared backend logic used by the Callable handler:
+ *   • Validates appointment status
+ *   • Confirms / applies any cancellation fee
+ *   • Issues a Square refund (via paymentService.refundPayment)
+ *   • Updates both Payment and Appointment documents
+ *
+ * The Payment document is updated with:
+ *   refundId, refundStatus, refundAmountCents, cancellationFeeCents, refundedAt
+ */
+
 import { getFirestore } from "firebase-admin/firestore";
 import { HttpsError }   from "firebase-functions/v2/https";
 import { refundPayment } from "./paymentService";
 import type { RefundPaymentResult } from "../types/payment";
 
-/** Minimal shape of the Payment doc as used by this service */
+/** Minimal subset of the Payment doc used here */
 interface Payment {
   transactionId: string;   // Square charge ID
-  amount: number;          // dollars
+  amount:        number;   // dollars
 }
 
 export interface CancelAppointmentInput {
@@ -16,6 +29,7 @@ export interface CancelAppointmentInput {
   cancellationFeeCents?: number;
   acceptCancellationFee?: boolean;
 }
+
 export interface CancelAppointmentResult {
   success: boolean;
   requiresConfirmation?: boolean;
@@ -28,7 +42,7 @@ export async function cancelAppointmentService(
 ): Promise<CancelAppointmentResult> {
   const db = getFirestore();
 
-  /* ─ 1) Load appointment ───────────────────────────────────────── */
+  /* ─── 1) Load the appointment ─────────────────────────────────── */
   const apptRef  = db.collection("appointments").doc(input.appointmentId);
   const apptSnap = await apptRef.get();
   if (!apptSnap.exists) {
@@ -43,7 +57,7 @@ export async function cancelAppointmentService(
     );
   }
 
-  /* ─ 2) Load payment doc ───────────────────────────────────────── */
+  /* ─── 2) Load its payment (if any) ────────────────────────────── */
   const paySnap = await db
     .collection("payments")
     .where("appointmentId", "==", input.appointmentId)
@@ -54,7 +68,7 @@ export async function cancelAppointmentService(
     ? null
     : (paySnap.docs[0].data() as Payment);
 
-  /* ─ 3) Fee confirmation flow ─────────────────────────────────── */
+  /* ─── 3) Fee confirmation flow ───────────────────────────────── */
   const feeCents = input.cancellationFeeCents ?? 0;
   if (feeCents > 0 && !input.acceptCancellationFee) {
     return {
@@ -64,27 +78,34 @@ export async function cancelAppointmentService(
     };
   }
 
-  /* ─ 4) Refund via Square (if charge exists) ──────────────────── */
+  /* ─── 4) Refund via Square (if a charge exists) ───────────────── */
   let refundResult: RefundPaymentResult | undefined;
   if (payment?.transactionId && payment.amount > 0) {
-    const paidCents   = Math.round(payment.amount * 100);
+    const paidCents   = Math.round(payment.amount * 100);      // dollars → cents
     const refundCents = Math.max(paidCents - feeCents, 0);
 
-    refundResult = await refundPayment({
-      toBeUsedBy:  appt.serviceLocationId,
-      paymentId:   payment.transactionId,
-      amountCents: refundCents,
-      reason:      `Cancellation of ${input.appointmentId}`,
-    });
+    try {
+      refundResult = await refundPayment({
+        toBeUsedBy:  appt.serviceLocationId,
+        paymentId:   payment.transactionId,
+        amountCents: refundCents,
+        reason:      `Cancellation of ${input.appointmentId}`,
+      });
 
-    await db.collection("payments").doc(payment.transactionId).update({
-      refundId:       refundResult.refundId,
-      refundStatus:   refundResult.status === "FAILED" ? "failed" : "refunded",
-      refundedAt:     new Date(),
-    });
+      await db.collection("payments").doc(payment.transactionId).update({
+        refundId:            refundResult.refundId,
+        refundStatus:        refundResult.status === "FAILED" ? "failed" : "refunded",
+        refundAmountCents:   refundCents,
+        cancellationFeeCents: feeCents,
+        refundedAt:          new Date(),
+      });
+    } catch (err: any) {
+      console.error("Square refund error:", err);
+      throw new HttpsError("internal", err.message || "Square refund failed");
+    }
   }
 
-  /* ─ 5) Mark appointment cancelled ────────────────────────────── */
+  /* ─── 5) Mark appointment as cancelled ───────────────────────── */
   await apptRef.update({
     status: "cancelled",
     metadata: {
@@ -95,5 +116,9 @@ export async function cancelAppointmentService(
     },
   });
 
-  return { success: true, cancellationFeeCents: feeCents, refundResult };
+  return {
+    success: true,
+    cancellationFeeCents: feeCents,
+    refundResult,
+  };
 }
