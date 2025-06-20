@@ -1,5 +1,3 @@
-// src/components/Appointments/AppointmentsTable.tsx
-
 import React from "react";
 import {
   Table,
@@ -13,7 +11,7 @@ import {
 } from "@mui/material";
 import { format } from "date-fns";
 import type { Appointment } from "../../models/Appointment";
-import type { Timestamp } from "firebase/firestore";
+import type { Timestamp }   from "firebase/firestore";
 
 export interface AppointmentsTableProps {
   appointments: (Appointment & {
@@ -23,14 +21,19 @@ export interface AppointmentsTableProps {
   })[];
   loading: boolean;
   error: string | null;
-  onEdit: (appointment: Appointment) => void;
-  onAssess?: (appointment: Appointment) => void;
-  onViewAssessment?: (appointment: Appointment) => void;
-  onDelete?: (appointment: Appointment) => void; // ← Soft-cancel callback
+
+  /* mandatory actions */
+  onEdit:  (appointment: Appointment) => void;
+
+  /* optional actions */
+  onAssess?:          (appointment: Appointment) => void;
+  onViewAssessment?:  (appointment: Appointment) => void;
+  onDelete?:          (appointment: Appointment) => void;      // soft-cancel
+  onReschedule?:      (appointment: Appointment) => void;      // NEW
 }
 
-/** Converts a Date | Timestamp | string | null to formatted text. */
-const fmt = (val: any, pat: string) => {
+/** Converts Date | Timestamp | string | null → formatted text. */
+const fmt = (val: any, pattern: string) => {
   if (!val) return "—";
   const d =
     val instanceof Date
@@ -38,7 +41,7 @@ const fmt = (val: any, pat: string) => {
       : (typeof val === "object" && "toDate" in val)
       ? (val as Timestamp).toDate()
       : new Date(val);
-  return isNaN(d.getTime()) ? "—" : format(d, pat);
+  return isNaN(d.getTime()) ? "—" : format(d, pattern);
 };
 
 export default function AppointmentsTable({
@@ -49,6 +52,7 @@ export default function AppointmentsTable({
   onAssess,
   onViewAssessment,
   onDelete,
+  onReschedule,
 }: AppointmentsTableProps) {
   if (loading)
     return (
@@ -95,29 +99,34 @@ export default function AppointmentsTable({
 
             <TableCell align="center">
               <Box display="flex" justifyContent="center" gap={1} flexWrap="nowrap">
-                {/* Edit button */}
+
+                {/* Edit */}
                 <Button size="small" onClick={() => onEdit(a)}>
                   Edit
                 </Button>
 
-                {/* Optional Assess button */}
+                {/* Optional Assess */}
                 {onAssess && (
                   <Button size="small" onClick={() => onAssess(a)}>
                     Assess
                   </Button>
                 )}
 
-                {/* Optional View Assessment button */}
+                {/* Optional View Assessment */}
                 {onViewAssessment && (
                   <Button size="small" onClick={() => onViewAssessment(a)}>
                     View&nbsp;Assessment
                   </Button>
                 )}
 
-                {/*
-                  The “Cancel” button calls onDelete(a) if provided.
-                  It does NOT delete the document itself.
-                */}
+                {/* Optional Reschedule */}
+                {onReschedule && (
+                  <Button size="small" onClick={() => onReschedule(a)}>
+                    Reschedule
+                  </Button>
+                )}
+
+                {/* Optional Cancel (soft-delete) */}
                 {onDelete && (
                   <Button
                     size="small"
