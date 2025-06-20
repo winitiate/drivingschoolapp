@@ -1,10 +1,9 @@
 /**
- * index.ts
- *
- * Fleet of all your Cloud Functions.
+ * index.ts  —  export all Cloud Functions
+ * Only ONE cancelAppointment export, pointing to the file above.
  */
 
-export { bookAppointment }    from "./handlers/bookAppointment.js";
-export { refundPayment }      from "./handlers/refundPayment.js";
-export { webhookHandler }     from "./handlers/webhookHandler.js";
-// (Remove createAppointment/createPayment handlers if no longer used)
+export { bookAppointment }   from "./handlers/bookAppointment.js";
+export { refundPayment }     from "./handlers/refundPayment.js";
+export { webhookHandler }    from "./handlers/webhookHandler.js";
+export { cancelAppointment } from "./handlers/cancelAppointment.js";

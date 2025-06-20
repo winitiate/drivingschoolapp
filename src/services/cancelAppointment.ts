@@ -1,27 +1,32 @@
 /**
- * cancelAppointment.ts
+ * src/services/cancelAppointment.ts
  *
- * An alias for refundPayment, representing “cancel appointment”
- * in the UI.  
- *
- * Usage:
- *   import { cancelAppointment } from "../services/cancelAppointment";
- *   await cancelAppointment({
- *     toBeUsedBy:  "loc001",
- *     paymentId:   "PAY_789",
- *     amountCents: 2500,
- *     reason:      "Client cancelled",
- *   });
+ * Front-end wrapper for the Callable Cloud Function “cancelAppointment”.
  */
 
-import type {
-  RefundPaymentInput,
-  RefundPaymentResult
-} from "./refundPayment";
-import { refundPayment } from "./refundPayment";
+import { httpsCallable } from "firebase/functions";
+import { functions }     from "../firebase";
 
-export async function cancelAppointment(
-  args: RefundPaymentInput
-): Promise<RefundPaymentResult> {
-  return refundPayment(args);
+export interface CancelAppointmentInput {
+  appointmentId: string;
+  cancellationFeeCents?: number;
+  acceptCancellationFee?: boolean;
+}
+export interface CancelAppointmentResult {
+  success: boolean;
+  requiresConfirmation?: boolean;
+  cancellationFeeCents?: number;
+  refundResult?: {
+    refundId: string;
+    status:   "COMPLETED" | "PENDING" | "FAILED";
+  };
+}
+
+export function cancelAppointment(
+  input: CancelAppointmentInput
+): Promise<CancelAppointmentResult> {
+  return httpsCallable<
+    CancelAppointmentInput,
+    CancelAppointmentResult
+  >(functions, "cancelAppointment")(input).then((r) => r.data);
 }

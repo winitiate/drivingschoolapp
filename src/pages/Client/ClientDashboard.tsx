@@ -1,11 +1,18 @@
 // src/pages/Client/ClientDashboard.tsx
-//
-// • Uses the new Appointment shape: clientIds[], serviceProviderIds[],
-//   startTime / endTime, etc.
-// • Filters by the singular `serviceLocationId` field (not the old array).
-// • Joins multiple providers’ names for display.
-// • Everything else (UI, dialogs, navigation) is left intact.
-//
+
+/**
+ * ClientDashboard.tsx
+ *
+ * Displays the client’s dashboard for a given service location:
+ *  • Loads & filters appointments for the current user & location
+ *  • Enriches each appointment with client name, provider names, and type title
+ *  • Renders a table with actions: Edit, View Assessment, Cancel
+ *  • Supports editing via AppointmentFormDialog
+ *  • Supports cancellation via CancelAppointmentDialog (fee confirmation + refund)
+ *
+ * All cancellation logic lives in CancelAppointmentDialog; this page only
+ * wires the dialog into the UI and refreshes the list on completion.
+ */
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
@@ -26,6 +33,7 @@ import {
 import { useAuth } from "../../auth/useAuth";
 import AppointmentsTable from "../../components/Appointments/AppointmentsTable";
 import AppointmentFormDialog from "../../components/Appointments/AppointmentFormDialog";
+import CancelAppointmentDialog from "../../components/Appointments/CancelAppointmentDialog";
 
 import { FirestoreAppointmentStore } from "../../data/FirestoreAppointmentStore";
 import { FirestoreServiceProviderStore } from "../../data/FirestoreServiceProviderStore";
@@ -41,10 +49,12 @@ export default function ClientDashboard() {
   const { user, loading: authLoading } = useAuth();
   const db = useMemo(() => getFirestore(), []);
 
+  // Firestore-backed stores for appointments, providers, and types
   const apptStore = useMemo(() => new FirestoreAppointmentStore(), []);
   const providerStore = useMemo(() => new FirestoreServiceProviderStore(), []);
   const typeStore = useMemo(() => new FirestoreAppointmentTypeStore(), []);
 
+  // Local state for data loading & enrichment
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -53,15 +63,28 @@ export default function ClientDashboard() {
   const [provMap, setProvMap] = useState<Record<string, string>>({});
   const [typeList, setTypeList] = useState<any[]>([]);
 
+  // State for the “Edit appointment” dialog
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Appointment | null>(null);
 
+  // State for the “Cancel appointment” dialog
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [toCancel, setToCancel] = useState<Appointment | null>(null);
+
+  /**
+   * loadAppointments
+   *
+   * Fetches all appointments, filters to those for the current user & location,
+   * builds provider & type name maps, and enriches each appointment record
+   * with display-friendly fields.
+   */
   const loadAppointments = useCallback(async () => {
     if (!user?.uid || !locId) return;
     setLoading(true);
     setError(null);
 
     try {
+      // 1) Fetch & filter
       const all = await apptStore.listAll();
       const mine = all.filter(
         (a) =>
@@ -69,6 +92,7 @@ export default function ClientDashboard() {
           a.serviceLocationId === locId
       );
 
+      // 2) Build provider name map
       const providers = await providerStore.listByServiceLocation(locId);
       const pMap: Record<string, string> = {};
       await Promise.all(
@@ -81,12 +105,14 @@ export default function ClientDashboard() {
         })
       );
 
+      // 3) Build appointment-type title map
       const types = await typeStore.listByServiceLocation(locId);
       const tMap: Record<string, string> = {};
       types.forEach((t) => {
         if (t.id) tMap[t.id] = t.title;
       });
 
+      // 4) Enrich each appointment record
       const enriched = mine.map((a) => ({
         ...a,
         clientName: `${user.firstName} ${user.lastName}`,
@@ -108,9 +134,12 @@ export default function ClientDashboard() {
     }
   }, [user, locId, db, apptStore, providerStore, typeStore]);
 
+  // Load once, and whenever dependencies change
   useEffect(() => {
     loadAppointments();
   }, [loadAppointments]);
+
+  // ——— Edit appointment handlers ————————————————————————————
 
   const handleEdit = useCallback((appt: Appointment) => {
     setEditing(appt);
@@ -126,14 +155,34 @@ export default function ClientDashboard() {
     [loadAppointments]
   );
 
-  const handleDelete = useCallback(
-    async (toDelete: Appointment) => {
-      await appointmentStore.delete(toDelete.id!);
-      setDialogOpen(false);
+  // ——— Cancel appointment handlers —————————————————————————
+
+  /**
+   * handleCancelClick
+   *
+   * Opens the CancelAppointmentDialog for the selected appointment.
+   */
+  const handleCancelClick = useCallback((appt: Appointment) => {
+    setToCancel(appt);
+    setCancelDialogOpen(true);
+  }, []);
+
+  /**
+   * handleCancelled
+   *
+   * Callback after a successful cancellation (and refund, if any).
+   * Closes the dialog and reloads the appointments list.
+   */
+  const handleCancelled = useCallback(
+    (result: any) => {
+      setCancelDialogOpen(false);
+      setToCancel(null);
       loadAppointments();
     },
     [loadAppointments]
   );
+
+  // ——— Access control & loading states ————————————————————————
 
   if (authLoading) {
     return (
@@ -146,6 +195,8 @@ export default function ClientDashboard() {
   if (!locId || !user.clientLocationIds?.includes(locId)) {
     return <Navigate to="/" replace />;
   }
+
+  // ——— Main render ——————————————————————————————————————————
 
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
@@ -166,6 +217,7 @@ export default function ClientDashboard() {
             loading={loading}
             error={error}
             onEdit={handleEdit}
+            onDelete={handleCancelClick}
             onViewAssessment={(appt) =>
               navigate(`/client/${locId}/appointments/${appt.id}`)
             }
@@ -183,6 +235,7 @@ export default function ClientDashboard() {
         </Button>
       </Box>
 
+      {/* Edit Appointment Dialog */}
       {dialogOpen && editing && (
         <AppointmentFormDialog
           open={dialogOpen}
@@ -190,7 +243,10 @@ export default function ClientDashboard() {
           initialData={editing}
           onClose={() => setDialogOpen(false)}
           onSave={handleSave}
-          onDelete={handleDelete}
+          onDelete={() => {
+            setDialogOpen(false);
+            loadAppointments();
+          }}
           clients={[
             { id: user.uid, label: `${user.firstName} ${user.lastName}` },
           ]}
@@ -207,6 +263,19 @@ export default function ClientDashboard() {
           canEditAppointmentType={true}
           canEditDateTime={true}
           canCancel={true}
+        />
+      )}
+
+      {/* Cancel Appointment Dialog */}
+      {toCancel && (
+        <CancelAppointmentDialog
+          open={cancelDialogOpen}
+          appointment={toCancel}
+          onClose={() => {
+            setCancelDialogOpen(false);
+            setToCancel(null);
+          }}
+          onCancelled={handleCancelled}
         />
       )}
     </Container>

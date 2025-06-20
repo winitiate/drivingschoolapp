@@ -1,10 +1,7 @@
 /**
- * index.ts
- *
- * Barrel export of all payment/booking services
- * so you can import from "../services" directly.
+ * Barrel export for services.
  */
 
 export { bookAppointment }  from "./bookAppointment";
 export { refundPayment }    from "./refundPayment";
-export { cancelAppointment } from "./cancelAppointment";
+export { cancelAppointment } from "./cancelAppointment";   // <- new unified wrapper
