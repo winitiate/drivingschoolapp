@@ -1,17 +1,29 @@
 {
-  "functions": {
-    "source": "functions"
-  },
-
+  "functions": [
+    {
+      "codebase": "appointments",
+      "source": "functions-appointments"
+    },
+    {
+      "codebase": "invites",
+      "source": "functions-invites"
+    }
+  ],
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-
   "emulators": {
-    "functions":  { "port": 5001 },
-    "firestore":  { "port": 8080 },
-    "ui":         { "enabled": true, "port": 4000 },
+    "functions": {
+      "port": 5001
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000
+    },
     "singleProjectMode": true
   }
 }

@@ -1,0 +1,35 @@
+/**
+ * TypeScript configuration for the functions-invites codebase.
+ *
+ * - Compiles all .ts files under src/ into lib/ for Firebase Functions.
+ * - Uses CommonJS modules and targets ES2017 for Cloud Functions runtime.
+ * - Enables strict type-checking and interop with CommonJS.
+ */
+
+{
+  "compilerOptions": {
+    // Module resolution and output format
+    "module": "commonjs",                   // Use CommonJS modules for Node.js
+    "target": "es2017",                     // Compile to ES2017-compatible JavaScript
+    "lib": ["es2017"],                      // Include ES2017 built-in types
+
+    // Strictness
+    "strict": true,                         // Enable all strict type-checking options
+    "forceConsistentCasingInFileNames": true, // Ensure import paths’ casing is consistent
+    "skipLibCheck": true,                   // Skip type checking of declaration files
+
+    // Interop
+    "esModuleInterop": true,                // Allow default imports from CommonJS modules
+
+    // Source maps
+    "sourceMap": true,                      // Emit .js.map files for debugging
+
+    // Directory structure
+    "rootDir": "src",                       // Root of input TypeScript files
+    "outDir": "lib"                         // Output directory for compiled JavaScript
+  },
+
+  // Only compile files in src/, ignore node_modules and previous build output
+  "include": ["src"],
+  "exclude": ["node_modules", "lib"]
+}
