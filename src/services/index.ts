@@ -1,14 +1,12 @@
 /**
- * index.ts  – Barrel export for client-side service helpers
+ * src/services/index.ts
+ * --------------------------------------------------------------------------
+ * Public “barrel” for all front-end service wrappers.
  *
- * Each helper is a thin wrapper around its corresponding Cloud Function
- * (or, in the case of refundPayment, a direct Square-refund call).
- * Importing from one place keeps call-sites tidy:
+ *     import { bookAppointment, cancelAppointment, createClient } from "../../services";
  *
- *   import { bookAppointment, rescheduleAppointment } from "@/services";
+ * Behind the scenes, we delegate to src/services/api/index.ts so that any
+ * future sub-group only needs to register itself once.
  */
 
-export { bookAppointment }         from "./bookAppointment";
-export { refundPayment }           from "./refundPayment";
-export { cancelAppointment }       from "./cancelAppointment";
-export { rescheduleAppointment }   from "./rescheduleAppointment";
+export * from "./api";

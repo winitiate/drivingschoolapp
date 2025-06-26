@@ -1,19 +1,12 @@
-// src/data/FirestoreServiceLocationStore.ts
-
 /**
  * FirestoreServiceLocationStore.ts
  *
- * Firestore-based implementation of the ServiceLocationStore interface.
- * Uses the “serviceLocations” collection in Firestore and assumes each
- * document has `ownerId: string` and `adminIds: string[]` fields.
- *
- * Implements ServiceLocationStore to guarantee method signatures stay in sync.
+ * Concrete implementation of ServiceLocationStore.
+ * Transparently persists the new `selfRegister` object.
  */
 
-import { ServiceLocation } from "../models/ServiceLocation";
-import { ServiceLocationStore } from "./ServiceLocationStore";
-import { db } from "../firebase";
 import {
+  getFirestore,
   collection,
   doc,
   getDoc,
@@ -25,74 +18,60 @@ import {
   CollectionReference,
   DocumentReference,
 } from "firebase/firestore";
+import { ServiceLocation } from "../models/ServiceLocation";
+import { ServiceLocationStore } from "./ServiceLocationStore";
 
-// Firestore collection name for service locations
-const SERVICE_LOCATIONS_COLLECTION = "serviceLocations";
+const COLLECTION_NAME = "serviceLocations";
 
 export class FirestoreServiceLocationStore implements ServiceLocationStore {
-  // Reference to the Firestore “serviceLocations” collection
-  private collRef: CollectionReference = collection(
-    db,
-    SERVICE_LOCATIONS_COLLECTION
+  private db = getFirestore();
+  private collectionRef: CollectionReference = collection(
+    this.db,
+    COLLECTION_NAME
   );
 
-  /**
-   * @inheritdoc
-   */
+  /* ──────────── CRUD ──────────── */
+
   async getById(id: string): Promise<ServiceLocation | null> {
-    const docRef: DocumentReference = doc(
-      db,
-      SERVICE_LOCATIONS_COLLECTION,
-      id
-    );
-    const snap = await getDoc(docRef);
+    const snap = await getDoc(doc(this.db, COLLECTION_NAME, id));
     if (!snap.exists()) return null;
     return { id: snap.id, ...(snap.data() as ServiceLocation) };
   }
 
-  /**
-   * @inheritdoc
-   */
   async save(location: ServiceLocation): Promise<void> {
     const now = Timestamp.now();
-    // Determine document ID: existing or new
-    const id = location.id || doc(this.collRef).id;
-    const docRef: DocumentReference = doc(
-      db,
-      SERVICE_LOCATIONS_COLLECTION,
-      id
-    );
+    const { id, ...data } = location;
+
+    const docRef: DocumentReference = id
+      ? doc(this.db, COLLECTION_NAME, id)
+      : doc(this.collectionRef); // auto-ID for new docs
+
+    const createdAtTs =
+      location.createdAt instanceof Date
+        ? Timestamp.fromDate(location.createdAt)
+        : location.createdAt || now;
 
     await setDoc(
       docRef,
       {
-        ...location,
-        createdAt: location.createdAt || now,
+        ...data, // includes selfRegister overrides
+        createdAt: createdAtTs,
         updatedAt: now,
       },
       { merge: true }
     );
   }
 
-  /**
-   * @inheritdoc
-   */
   async listAll(): Promise<ServiceLocation[]> {
-    const snaps = await getDocs(this.collRef);
+    const snaps = await getDocs(this.collectionRef);
     return snaps.docs.map((d) => ({
       id: d.id,
       ...(d.data() as ServiceLocation),
     }));
   }
 
-  /**
-   * @inheritdoc
-   */
   async listByOwner(ownerId: string): Promise<ServiceLocation[]> {
-    const q = query(
-      this.collRef,
-      where("ownerId", "==", ownerId)
-    );
+    const q = query(this.collectionRef, where("ownerId", "==", ownerId));
     const snaps = await getDocs(q);
     return snaps.docs.map((d) => ({
       id: d.id,
@@ -100,4 +79,3 @@ export class FirestoreServiceLocationStore implements ServiceLocationStore {
     }));
   }
 }
-

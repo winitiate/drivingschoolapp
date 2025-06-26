@@ -1,6 +1,11 @@
-// src/components/ServiceLocations/LocationSettingsFormDialog.tsx
+/**
+ * LocationSettingsFormDialog.tsx
+ * --------------------------------------------------------------------------
+ * Lets owners / location-admins override appointment-type, booking-window,
+ * **and now per-role self-registration** settings for a single location.
+ */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -19,12 +24,16 @@ import {
   TableCell,
   TextField,
   Typography,
-} from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
+} from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 
-import { ServiceLocation } from '../../models/ServiceLocation';
-import { AppointmentType } from '../../models/AppointmentType';
+import { ServiceLocation } from "../../models/ServiceLocation";
+import { AppointmentType } from "../../models/AppointmentType";
+import type { SelfRegisterSettings } from "../../models/Business"; // ← NEW
 
+/* ------------------------------------------------------------------ */
+/*  Props                                                             */
+/* ------------------------------------------------------------------ */
 interface Props {
   open: boolean;
   initialData: ServiceLocation;
@@ -32,6 +41,9 @@ interface Props {
   onSave: (loc: ServiceLocation) => void;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Component                                                         */
+/* ------------------------------------------------------------------ */
 export default function LocationSettingsFormDialog({
   open,
   initialData,
@@ -40,23 +52,38 @@ export default function LocationSettingsFormDialog({
 }: Props) {
   const [data, setData] = useState<ServiceLocation>(initialData);
 
+  /* keep dialog state fresh */
   useEffect(() => {
     setData(initialData);
   }, [initialData]);
 
+  /* generic flag toggler (existing) */
   const toggleFlag = (key: keyof ServiceLocation, value: boolean) => {
     setData((d) => ({ ...d, [key]: value }));
   };
 
+  /* generic field setter (existing) */
   const handleField = (key: keyof ServiceLocation, value: any) => {
     setData((d) => ({ ...d, [key]: value }));
   };
 
+  /* NEW: toggle per-role self-registration flag */
+  const toggleSelfReg = (
+    key: keyof SelfRegisterSettings,
+    value: boolean
+  ) => {
+    setData((d) => ({
+      ...d,
+      selfRegister: { ...(d.selfRegister || {}), [key]: value },
+    }));
+  };
+
+  /* add blank appointment-type row (existing) */
   const addType = () => {
     const newType: AppointmentType = {
       id: `temp-${Date.now()}`,
       serviceLocationId: initialData.id!,
-      title: '',
+      title: "",
       durationMinutes: 60,
       bufferBeforeMinutes: 0,
       bufferAfterMinutes: 0,
@@ -74,6 +101,7 @@ export default function LocationSettingsFormDialog({
     }));
   };
 
+  /* update individual AppointmentType field (existing) */
   const updateTypeField = (
     idx: number,
     field: keyof AppointmentType,
@@ -84,35 +112,42 @@ export default function LocationSettingsFormDialog({
     setData((d) => ({ ...d, locationAppointmentTypes: updated }));
   };
 
+  /* ------------------------------------------------------------------ */
+  /*  Render                                                            */
+  /* ------------------------------------------------------------------ */
   return (
     <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
       <DialogTitle>Edit Location Overrides</DialogTitle>
+
       <DialogContent dividers>
-        {/* Appointment Types override */}
+        {/* ───────────────── Appointment-type override ───────────────── */}
         <Box mb={2}>
           <FormControlLabel
             control={
               <Checkbox
                 checked={!!data.allowAppointmentTypeOverride}
                 onChange={(e) =>
-                  toggleFlag(
-                    'allowAppointmentTypeOverride',
-                    e.target.checked
-                  )
+                  toggleFlag("allowAppointmentTypeOverride", e.target.checked)
                 }
               />
             }
             label="Allow Appointment-Type Overrides"
           />
         </Box>
+
         {data.allowAppointmentTypeOverride && (
           <Box mb={3}>
-            <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Box
+              display="flex"
+              justifyContent="space-between"
+              alignItems="center"
+            >
               <Typography variant="subtitle1">Appointment Types</Typography>
               <IconButton onClick={addType}>
                 <AddIcon />
               </IconButton>
             </Box>
+
             <Paper variant="outlined">
               <Table size="small">
                 <TableHead>
@@ -131,7 +166,7 @@ export default function LocationSettingsFormDialog({
                         <TextField
                           value={t.title}
                           onChange={(e) =>
-                            updateTypeField(idx, 'title', e.target.value)
+                            updateTypeField(idx, "title", e.target.value)
                           }
                           margin="dense"
                           fullWidth
@@ -144,7 +179,7 @@ export default function LocationSettingsFormDialog({
                           onChange={(e) =>
                             updateTypeField(
                               idx,
-                              'durationMinutes',
+                              "durationMinutes",
                               Number(e.target.value)
                             )
                           }
@@ -159,7 +194,7 @@ export default function LocationSettingsFormDialog({
                           onChange={(e) =>
                             updateTypeField(
                               idx,
-                              'bufferBeforeMinutes',
+                              "bufferBeforeMinutes",
                               Number(e.target.value)
                             )
                           }
@@ -174,7 +209,7 @@ export default function LocationSettingsFormDialog({
                           onChange={(e) =>
                             updateTypeField(
                               idx,
-                              'bufferAfterMinutes',
+                              "bufferAfterMinutes",
                               Number(e.target.value)
                             )
                           }
@@ -187,7 +222,7 @@ export default function LocationSettingsFormDialog({
                           type="number"
                           value={t.price}
                           onChange={(e) =>
-                            updateTypeField(idx, 'price', Number(e.target.value))
+                            updateTypeField(idx, "price", Number(e.target.value))
                           }
                           margin="dense"
                           fullWidth
@@ -201,20 +236,21 @@ export default function LocationSettingsFormDialog({
           </Box>
         )}
 
-        {/* Notice-window override */}
+        {/* ───────────────── Booking-window override ─────────────────── */}
         <Box mb={2}>
           <FormControlLabel
             control={
               <Checkbox
                 checked={!!data.allowNoticeWindowOverride}
                 onChange={(e) =>
-                  toggleFlag('allowNoticeWindowOverride', e.target.checked)
+                  toggleFlag("allowNoticeWindowOverride", e.target.checked)
                 }
               />
             }
             label="Allow Booking-Window Override"
           />
         </Box>
+
         {data.allowNoticeWindowOverride && (
           <Box mb={3}>
             <TextField
@@ -222,7 +258,7 @@ export default function LocationSettingsFormDialog({
               label="Min Notice Hours"
               value={data.minNoticeHours || 0}
               onChange={(e) =>
-                handleField('minNoticeHours', Number(e.target.value))
+                handleField("minNoticeHours", Number(e.target.value))
               }
               fullWidth
               margin="dense"
@@ -232,21 +268,66 @@ export default function LocationSettingsFormDialog({
               label="Max Advance Days"
               value={data.maxAdvanceDays || 0}
               onChange={(e) =>
-                handleField('maxAdvanceDays', Number(e.target.value))
+                handleField("maxAdvanceDays", Number(e.target.value))
               }
               fullWidth
               margin="dense"
             />
           </Box>
         )}
+
+        {/* ─────────────── Self-Registration overrides ──────────────── */}
+        <Box mb={3}>
+          <Typography variant="subtitle1" gutterBottom>
+            Self-Registration Overrides
+          </Typography>
+
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={!!data.selfRegister?.provider}
+                onChange={(e) =>
+                  toggleSelfReg("provider", e.target.checked)
+                }
+              />
+            }
+            label="Providers"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={!!data.selfRegister?.client}
+                onChange={(e) => toggleSelfReg("client", e.target.checked)}
+              />
+            }
+            label="Clients"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={!!data.selfRegister?.locationAdmin}
+                onChange={(e) =>
+                  toggleSelfReg("locationAdmin", e.target.checked)
+                }
+              />
+            }
+            label="Location Admins"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={!!data.selfRegister?.owner}
+                onChange={(e) => toggleSelfReg("owner", e.target.checked)}
+              />
+            }
+            label="Business Owners"
+          />
+        </Box>
       </DialogContent>
 
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button
-          variant="contained"
-          onClick={() => onSave(data)}
-        >
+        <Button variant="contained" onClick={() => onSave(data)}>
           Save
         </Button>
       </DialogActions>

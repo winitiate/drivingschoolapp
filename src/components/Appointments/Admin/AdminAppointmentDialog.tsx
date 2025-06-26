@@ -1,11 +1,14 @@
 /**
  * src/components/Appointments/Admin/AdminAppointmentDialog.tsx
  *
- * This dialog component allows an administrator to create, edit, or cancel a single appointment.
- * It uses an inline “Cancellation Reason” field instead of a window.prompt. When the admin clicks
- * “Cancel Appointment,” an input appears for the reason; typing a reason enables “Confirm Cancellation.”
+ * This dialog component allows an administrator to create, edit, or cancel a
+ * single appointment. It uses an inline “Cancellation Reason” field instead of
+ * a window.prompt. When the admin clicks “Cancel Appointment,” an input appears
+ * for the reason; typing a reason enables “Confirm Cancellation.”
+ *
  * Confirming will:
- *   1) Issue a refund via cancelAppointment Cloud Function if `metadata.paymentId` exists.
+ *   1) Issue a refund via cancelAppointment Cloud Function if `metadata.paymentId`
+ *      exists.
  *   2) Soft‐cancel the appointment by invoking onDelete(updatedAppointment) with:
  *        status: "cancelled"
  *        cancellation: { time, reason, whoCancelled?, feeApplied: false }
@@ -17,9 +20,10 @@
  *   • onClose(): void
  *   • onSave(appt: Appointment): Promise<void>
  *   • onDelete(appt: Appointment): Promise<void>
- *         – Called after any refund (if paid) or immediately if unpaid. Parent must persist changes:
+ *       – Called after any refund (if paid) or immediately if unpaid. Parent
+ *         must persist changes:
  *             appointment.status = "cancelled"
- *             appointment.cancellation = { time, reason, whoCancelled?, feeApplied: false }
+ *             appointment.cancellation = { time, reason, whoCancelled?, feeApplied:false }
  *   • clients: Option[]
  *   • providers: Option[]
  *   • types: { id: string; label: string; durationMinutes?: number }[]
@@ -48,7 +52,9 @@ import { v4 as uuidv4 } from "uuid";
 import { differenceInMinutes, addMinutes } from "date-fns";
 
 import type { Appointment } from "../../../models/Appointment";
-import { cancelAppointment as callCancelAppointment } from "../../../services/cancelAppointment";
+import {
+  cancelAppointment as callCancelAppointment,
+} from "../../../services";             // ← updated import path
 
 export interface Option {
   id: string;
@@ -87,11 +93,15 @@ export default function AdminAppointmentDialog({
   const isEdit = Boolean(initialData?.id);
 
   /* ───────── Form State ───────── */
-  const [appointmentTypeId, setAppointmentTypeId] = useState<string>("");  
+  const [appointmentTypeId, setAppointmentTypeId] = useState<string>("");
   const [clientIds, setClientIds] = useState<string[]>([]);
   const [providerIds, setProviderIds] = useState<string[]>([]);
-  const [appointmentStart, setAppointmentStart] = useState<Date | null>(new Date());
-  const [appointmentEnd, setAppointmentEnd] = useState<Date | null>(addMinutes(new Date(), 60));
+  const [appointmentStart, setAppointmentStart] = useState<Date | null>(
+    new Date()
+  );
+  const [appointmentEnd, setAppointmentEnd] = useState<Date | null>(
+    addMinutes(new Date(), 60)
+  );
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,8 +124,8 @@ export default function AdminAppointmentDialog({
         initialData.startTime ? new Date(initialData.startTime) : new Date()
       );
       setAppointmentEnd(
-        initialData.endTime 
-          ? new Date(initialData.endTime) 
+        initialData.endTime
+          ? new Date(initialData.endTime)
           : addMinutes(new Date(), 60)
       );
     } else {
@@ -210,7 +220,7 @@ export default function AdminAppointmentDialog({
         cancellation: {
           time: new Date(),
           reason: cancelReason.trim(),
-          feeApplied: pid ? false : false,
+          feeApplied: false,
           whoCancelled: undefined,
         },
       };
@@ -352,16 +362,12 @@ export default function AdminAppointmentDialog({
       <DialogActions sx={{ justifyContent: "space-between", p: 2 }}>
         {/* “Cancel Appointment” button */}
         {showCancelButton && (
-          <Button
-            color="error"
-            onClick={handleStartCancel}
-            disabled={saving}
-          >
+          <Button color="error" onClick={handleStartCancel} disabled={saving}>
             Cancel Appointment
           </Button>
         )}
 
-        {/* “Abort” and “Confirm Cancellation” buttons (only when isCancelling) */}
+        {/* “Abort” and “Confirm Cancellation” buttons */}
         {isCancelling && (
           <Box display="flex" gap={1}>
             <Button
@@ -381,7 +387,7 @@ export default function AdminAppointmentDialog({
           </Box>
         )}
 
-        {/* “Save” / “Close” buttons (hidden during cancellation) */}
+        {/* “Save / Close” buttons */}
         {!isCancelling && (
           <Box display="flex" gap={1}>
             <Button onClick={onClose} disabled={saving}>

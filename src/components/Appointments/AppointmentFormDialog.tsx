@@ -11,22 +11,7 @@
  *       cancellation: { time, reason, feeApplied: false }
  *
  * Props:
- *   • open: boolean
- *   • serviceLocationId: string
- *   • initialData?: Appointment
- *   • onClose(): void
- *   • onSave(appt: Appointment): Promise<void>
- *         – Used for both create/edit and soft‐cancel updates.
- *   • clients: Option[]
- *   • serviceProviders: Option[]
- *   • appointmentTypes: Option[]
- *   • canEditClient?: boolean
- *   • canEditAppointmentType?: boolean
- *   • canEditProvider?: boolean
- *   • canEditDateTime?: boolean
- *   • canCancel?: boolean
- *
- * NOTE: No window.prompt calls remain here.
+ *   • open … (see original header for full list)
  */
 
 import React, { useState, useEffect } from "react";
@@ -52,8 +37,14 @@ import { v4 as uuidv4 } from "uuid";
 import { differenceInMinutes, addMinutes } from "date-fns";
 
 import type { Appointment } from "../../models/Appointment";
-import { cancelAppointment as callCancelAppointment } from "../../services/cancelAppointment";
+import {
+  cancelAppointment as callCancelAppointment,
+  CancelAppointmentInput,
+} from "../../services";               // ← updated import path
 
+/* ------------------------------------------------------------------ */
+/*  Types                                                             */
+/* ------------------------------------------------------------------ */
 export interface Option {
   id: string;
   label: string;
@@ -75,6 +66,9 @@ export interface AppointmentFormDialogProps {
   canCancel?: boolean;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Component                                                         */
+/* ------------------------------------------------------------------ */
 export default function AppointmentFormDialog({
   open,
   serviceLocationId,
@@ -92,7 +86,7 @@ export default function AppointmentFormDialog({
 }: AppointmentFormDialogProps) {
   const isEdit = Boolean(initialData?.id);
 
-  // ───────── Form fields ─────────
+  /* ───────── Form fields ───────── */
   const [appointmentTypeId, setAppointmentTypeId] = useState<string>("");
   const [clientIds, setClientIds] = useState<string[]>([]);
   const [serviceProviderIds, setServiceProviderIds] = useState<string[]>([]);
@@ -105,11 +99,11 @@ export default function AppointmentFormDialog({
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ───────── Cancellation UI State ─────────
+  /* ───────── Cancellation UI State ───────── */
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [cancelReason, setCancelReason] = useState<string>("");
 
-  // ───────── Reset when dialog opens or initialData changes ─────────
+  /* ───────── Reset when dialog opens or initialData changes ───────── */
   useEffect(() => {
     if (!open) return;
     setError(null);
@@ -132,15 +126,9 @@ export default function AppointmentFormDialog({
       setAppointmentStart(now);
       setAppointmentEnd(addMinutes(now, 60));
     }
-  }, [
-    open,
-    initialData,
-    appointmentTypes,
-    clients,
-    serviceProviders,
-  ]);
+  }, [open, initialData, appointmentTypes, clients, serviceProviders]);
 
-  // ───────── Handle “Save” (create or edit) ─────────
+  /* ───────── Handle “Save” (create or edit) ───────── */
   const handleSubmit = async () => {
     if (!appointmentStart || !appointmentEnd) return;
     setSaving(true);
@@ -176,19 +164,19 @@ export default function AppointmentFormDialog({
     }
   };
 
-  // ───────── Handle “Start Cancellation” ─────────
+  /* ───────── Handle “Start Cancellation” ───────── */
   const handleStartCancel = () => {
     setIsCancelling(true);
     setCancelReason("");
   };
 
-  // ───────── Handle “Abort Cancellation” ─────────
+  /* ───────── Handle “Abort Cancellation” ───────── */
   const handleAbortCancel = () => {
     setIsCancelling(false);
     setCancelReason("");
   };
 
-  // ───────── Handle “Confirm Cancellation” ─────────
+  /* ───────── Handle “Confirm Cancellation” ───────── */
   const handleConfirmCancel = async () => {
     if (!initialData || !initialData.id) return;
     if (!cancelReason.trim()) {
@@ -233,7 +221,7 @@ export default function AppointmentFormDialog({
     }
   };
 
-  // ───────── Render ─────────
+  /* ───────── Render ───────── */
   const showCancelButton = isEdit && canCancel && !isCancelling;
   const confirmEnabled = Boolean(cancelReason.trim());
 
@@ -320,7 +308,9 @@ export default function AppointmentFormDialog({
             disabled={!canEditProvider || saving || isCancelling}
             renderValue={(selected) =>
               (selected as string[])
-                .map((id) => serviceProviders.find((sp) => sp.id === id)?.label)
+                .map(
+                  (id) => serviceProviders.find((sp) => sp.id === id)?.label
+                )
                 .join(", ")
             }
           >
@@ -371,13 +361,9 @@ export default function AppointmentFormDialog({
       </DialogContent>
 
       <DialogActions sx={{ justifyContent: "space-between", p: 2 }}>
-        {/* “Cancel Appointment” button (starts inline reason) */}
+        {/* “Cancel Appointment” button */}
         {showCancelButton && (
-          <Button
-            color="error"
-            onClick={handleStartCancel}
-            disabled={saving}
-          >
+          <Button color="error" onClick={handleStartCancel} disabled={saving}>
             Cancel Appointment
           </Button>
         )}
@@ -402,7 +388,7 @@ export default function AppointmentFormDialog({
           </Box>
         )}
 
-        {/* “Close” / “Save” (hidden during cancellation) */}
+        {/* “Close / Save” */}
         {!isCancelling && (
           <Box display="flex" gap={1}>
             <Button onClick={onClose} disabled={saving}>

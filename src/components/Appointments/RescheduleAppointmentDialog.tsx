@@ -30,7 +30,7 @@ import { useAppointmentsMap }   from "../../hooks/useAppointmentsMap";
 import { useAvailabilities }    from "../../hooks/useAvailabilities";
 import { buildSlots }           from "../../utils/bookingUtils";
 
-import { rescheduleAppointment } from "../../services/rescheduleAppointment";
+import { rescheduleAppointment } from "../../services/api/appointments/rescheduleAppointment";
 
 import { FirestoreAppointmentTypeStore } from "../../data/FirestoreAppointmentTypeStore";
 import { FirestoreServiceProviderStore } from "../../data/FirestoreServiceProviderStore";

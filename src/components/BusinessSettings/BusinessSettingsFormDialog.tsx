@@ -1,6 +1,11 @@
-// src/components/BusinessSettings/BusinessSettingsFormDialog.tsx
+/**
+ * BusinessSettingsFormDialog.tsx
+ * --------------------------------------------------------------------------
+ * Edits booking window, cancellation policy, appointment types,
+ * **and now per-role self-registration defaults**.
+ */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -19,10 +24,14 @@ import {
   TableCell,
   Paper,
   Typography,
-} from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import { BusinessSettings } from '../../models/BusinessSettings';
+} from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import { BusinessSettings } from "../../models/BusinessSettings";
+import type { SelfRegisterSettings } from "../../models/Business"; // ← NEW
 
+/* ------------------------------------------------------------------ */
+/*  Props                                                             */
+/* ------------------------------------------------------------------ */
 interface Props {
   open: boolean;
   initialData: BusinessSettings;
@@ -30,6 +39,9 @@ interface Props {
   onSave: (settings: BusinessSettings) => void;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Component                                                         */
+/* ------------------------------------------------------------------ */
 export default function BusinessSettingsFormDialog({
   open,
   initialData,
@@ -38,10 +50,12 @@ export default function BusinessSettingsFormDialog({
 }: Props) {
   const [data, setData] = useState<BusinessSettings>(initialData);
 
+  /* keep dialog state fresh when parent passes new initialData */
   useEffect(() => {
     setData(initialData);
   }, [initialData]);
 
+  /* ---------------- field helpers ---------------- */
   const handleFieldChange = (
     field: keyof BusinessSettings,
     value: any
@@ -50,7 +64,7 @@ export default function BusinessSettingsFormDialog({
   };
 
   const handlePolicyChange = (
-    key: keyof BusinessSettings['cancellationPolicy'],
+    key: keyof BusinessSettings["cancellationPolicy"],
     value: any
   ) => {
     setData((d) => ({
@@ -59,10 +73,22 @@ export default function BusinessSettingsFormDialog({
     }));
   };
 
+  /* NEW: toggle self-registration booleans */
+  const toggleSelfReg = (
+    key: keyof SelfRegisterSettings,
+    value: boolean
+  ) => {
+    setData((d) => ({
+      ...d,
+      selfRegister: { ...(d.selfRegister || {}), [key]: value },
+    }));
+  };
+
+  /* add blank appointment-type row */
   const addAppointmentType = () => {
     const newType = {
       id: `temp-${Date.now()}`,
-      title: '',
+      title: "",
       durationMinutes: 60,
       bufferBeforeMinutes: 0,
       bufferAfterMinutes: 0,
@@ -76,18 +102,22 @@ export default function BusinessSettingsFormDialog({
     }));
   };
 
+  /* ---------------------------------------------------------------- */
+  /*  Render                                                          */
+  /* ---------------------------------------------------------------- */
   return (
     <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
       <DialogTitle>Edit Business Settings</DialogTitle>
+
       <DialogContent dividers>
-        {/* Advance-booking window */}
+        {/* ─────────────────── Advance-booking window ─────────────────── */}
         <Box mb={2}>
           <TextField
             type="number"
             label="Min Notice Hours"
             value={data.minNoticeHours}
             onChange={(e) =>
-              handleFieldChange('minNoticeHours', Number(e.target.value))
+              handleFieldChange("minNoticeHours", Number(e.target.value))
             }
             fullWidth
             margin="dense"
@@ -97,21 +127,24 @@ export default function BusinessSettingsFormDialog({
             label="Max Advance Days"
             value={data.maxAdvanceDays}
             onChange={(e) =>
-              handleFieldChange('maxAdvanceDays', Number(e.target.value))
+              handleFieldChange("maxAdvanceDays", Number(e.target.value))
             }
             fullWidth
             margin="dense"
           />
         </Box>
 
-        {/* Cancellation policy */}
+        {/* ───────────────────── Cancellation policy ──────────────────── */}
         <Box mb={2}>
           <FormControlLabel
             control={
               <Checkbox
                 checked={data.cancellationPolicy.allowClientCancel}
                 onChange={(e) =>
-                  handlePolicyChange('allowClientCancel', e.target.checked)
+                  handlePolicyChange(
+                    "allowClientCancel",
+                    e.target.checked
+                  )
                 }
               />
             }
@@ -123,7 +156,7 @@ export default function BusinessSettingsFormDialog({
             value={data.cancellationPolicy.cancelDeadlineHours}
             onChange={(e) =>
               handlePolicyChange(
-                'cancelDeadlineHours',
+                "cancelDeadlineHours",
                 Number(e.target.value)
               )
             }
@@ -136,7 +169,7 @@ export default function BusinessSettingsFormDialog({
             value={data.cancellationPolicy.feeOnLateCancel}
             onChange={(e) =>
               handlePolicyChange(
-                'feeOnLateCancel',
+                "feeOnLateCancel",
                 Number(e.target.value)
               )
             }
@@ -145,7 +178,7 @@ export default function BusinessSettingsFormDialog({
           />
         </Box>
 
-        {/* Reschedule policy */}
+        {/* ───────────────────── Reschedule policy ────────────────────── */}
         <Box mb={2}>
           <FormControlLabel
             control={
@@ -153,7 +186,7 @@ export default function BusinessSettingsFormDialog({
                 checked={data.allowClientReschedule}
                 onChange={(e) =>
                   handleFieldChange(
-                    'allowClientReschedule',
+                    "allowClientReschedule",
                     e.target.checked
                   )
                 }
@@ -167,7 +200,7 @@ export default function BusinessSettingsFormDialog({
             value={data.rescheduleDeadlineHours}
             onChange={(e) =>
               handleFieldChange(
-                'rescheduleDeadlineHours',
+                "rescheduleDeadlineHours",
                 Number(e.target.value)
               )
             }
@@ -176,13 +209,65 @@ export default function BusinessSettingsFormDialog({
           />
         </Box>
 
-        {/* Appointment types table */}
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+        {/* ─────────────── Self-Registration defaults ──────────────── */}
+        <Box mb={3}>
+          <Typography variant="subtitle1" gutterBottom>
+            Self-Registration Defaults
+          </Typography>
+
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={!!data.selfRegister?.provider}
+                onChange={(e) => toggleSelfReg("provider", e.target.checked)}
+              />
+            }
+            label="Allow Providers to self-register"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={!!data.selfRegister?.client}
+                onChange={(e) => toggleSelfReg("client", e.target.checked)}
+              />
+            }
+            label="Allow Clients to self-register"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={!!data.selfRegister?.locationAdmin}
+                onChange={(e) =>
+                  toggleSelfReg("locationAdmin", e.target.checked)
+                }
+              />
+            }
+            label="Allow Location Admins to self-register"
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={!!data.selfRegister?.owner}
+                onChange={(e) => toggleSelfReg("owner", e.target.checked)}
+              />
+            }
+            label="Allow Business Owners to self-register"
+          />
+        </Box>
+
+        {/* ─────────────────── Appointment Types table ────────────────── */}
+        <Box
+          display="flex"
+          justifyContent="space-between"
+          alignItems="center"
+          mb={1}
+        >
           <Typography variant="subtitle1">Appointment Types</Typography>
           <IconButton onClick={addAppointmentType}>
             <AddIcon />
           </IconButton>
         </Box>
+
         <Paper variant="outlined">
           <Table size="small">
             <TableHead>
@@ -194,6 +279,7 @@ export default function BusinessSettingsFormDialog({
                 <TableCell>Price</TableCell>
               </TableRow>
             </TableHead>
+
             <TableBody>
               {data.appointmentTypes.map((t, idx) => (
                 <TableRow key={t.id}>
@@ -234,7 +320,9 @@ export default function BusinessSettingsFormDialog({
                       value={t.bufferBeforeMinutes}
                       onChange={(e) => {
                         const updated = [...data.appointmentTypes];
-                        updated[idx].bufferBeforeMinutes = Number(e.target.value);
+                        updated[idx].bufferBeforeMinutes = Number(
+                          e.target.value
+                        );
                         setData((d) => ({
                           ...d,
                           appointmentTypes: updated,
@@ -250,7 +338,9 @@ export default function BusinessSettingsFormDialog({
                       value={t.bufferAfterMinutes}
                       onChange={(e) => {
                         const updated = [...data.appointmentTypes];
-                        updated[idx].bufferAfterMinutes = Number(e.target.value);
+                        updated[idx].bufferAfterMinutes = Number(
+                          e.target.value
+                        );
                         setData((d) => ({
                           ...d,
                           appointmentTypes: updated,

@@ -51,7 +51,7 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../../../firebase";
 
 // ← Your single‐call backend that both charges and writes the appointment
-import { bookAppointment } from "../../../services/bookAppointment";
+import { bookAppointment } from "../../../services/api/appointments/bookAppointment";
 
 export default function BookingPage() {
   const { id: locId } = useParams<{ id: string }>();

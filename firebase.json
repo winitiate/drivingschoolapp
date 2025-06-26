@@ -5,8 +5,8 @@
       "source": "functions-appointments"
     },
     {
-      "codebase": "invites",
-      "source": "functions-invites"
+      "codebase": "users",
+      "source": "functions-users"
     }
   ],
   "firestore": {
