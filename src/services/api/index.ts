@@ -20,3 +20,4 @@ export * from "./users/createBusiness";
 export * from "./users/createClient";
 export * from "./users/createServiceLocationAdmin";
 export * from "./users/createServiceProvider";
+export * from "./users/createBusinessOwner"; // ✅ NEW: creates auth + Firestore profile
