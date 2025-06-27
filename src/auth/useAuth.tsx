@@ -5,22 +5,7 @@
  *   • Firebase Auth state listener  ➜ real-time Firestore profile
  *   • Email / Password sign-in & sign-up
  *   • Google sign-in
- *   • **Multi-provider account linking**  ← NEW
- *
- * Provider-linking strategy
- * -------------------------
- * If the user tries to sign in with provider B and Firebase throws
- * `auth/account-exists-with-different-credential`, we:
- *
- *   1. Extract the *pending* credential from the error (this is provider B).
- *   2. Fetch which provider(s) already exist for that e-mail (provider A).
- *   3. Sign-in with provider A (silent popup for Google, password prompt for
- *      email/password).
- *   4. Immediately call linkWithCredential(user, pendingCred) so both creds
- *      merge under the *original* UID. One user doc → no duplicates.
- *
- * UI prompts are kept minimal for now (window.prompt / alert). Swap these for
- * a proper MUI dialog later if you like.
+ *   • Multi-provider account linking
  * -----------------------------------------------------------------------------
  */
 
@@ -53,11 +38,26 @@ import {
   serverTimestamp,
   DocumentSnapshot,
 } from "firebase/firestore";
+import { FirebaseError } from "firebase/app";
 import { auth, db } from "../firebase";
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Local types
- * ────────────────────────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────────────────
+ * Local Firestore-document & context types
+ * ──────────────────────────────────────────────────────────────────────── */
+interface FirestoreUserDoc {
+  roles?: string[];
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+
+  ownedBusinessIds?: string[];
+  memberBusinessIds?: string[];
+  ownedLocationIds?: string[];
+  adminLocationIds?: string[];
+  providerLocationIds?: string[];
+  clientLocationIds?: string[];
+}
+
 export interface AuthUser {
   uid: string;
   email: string | null;
@@ -79,42 +79,34 @@ interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
 
-  /** E-mail + password sign-in */
   signIn(email: string, password: string): Promise<AuthUser>;
-
-  /** Google sign-in */
   signInWithGoogle(): Promise<AuthUser>;
-
-  /** E-mail + password sign-up (caller supplies starting roles) */
   signUp(email: string, password: string, roles: string[]): Promise<AuthUser>;
-
-  /** Firebase sign-out */
   signOutUser(): Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Provider component
- * ────────────────────────────────────────────────────────────────────────── */
+/* ──────────────────────────────────────────────────────────────────────────
+ * Provider
+ * ──────────────────────────────────────────────────────────────────────── */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /* Google provider configured for one-tap & popup */
   const googleProvider = new GoogleAuthProvider();
   googleProvider.setCustomParameters({ prompt: "select_account" });
 
-  /* Helper – normalise Firestore snapshot into AuthUser -------------------- */
+  /* Convert a Firestore snapshot into AuthUser --------------------------------*/
   function normaliseSnapshot(
     fbUser: FirebaseUser,
-    snap: DocumentSnapshot
+    snap: DocumentSnapshot<FirestoreUserDoc>
   ): AuthUser {
-    const d = snap.data() as any;
+    const d = snap.data()!;
     return {
       uid: fbUser.uid,
       email: fbUser.email,
-      roles: Array.isArray(d.roles) ? d.roles : [],
+      roles: d.roles ?? [],
 
       firstName: d.firstName,
       lastName: d.lastName,
@@ -129,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }
 
-  /* ───── Listen for Firebase Auth changes + Firestore user doc ─────────── */
+  /* Listen for auth changes + user-doc updates ------------------------------- */
   useEffect(() => {
     let unsubProfile: (() => void) | null = null;
 
@@ -150,15 +142,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (snap.exists()) {
               setUser(normaliseSnapshot(fbUser, snap));
             } else {
-              // Auth user has no Firestore profile → force sign-out to stay
-              // consistent.
               firebaseSignOut(auth);
               setUser(null);
             }
             setLoading(false);
           },
           async () => {
-            // Snapshot failed (permissions?) → fall back to one-shot fetch
             try {
               const once = await getDoc(ref);
               if (once.exists()) {
@@ -188,25 +177,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    *  Multi-provider account-linking helpers
    * ────────────────────────────────────────────────────────────────────── */
 
-  /**
-   * linkAfterProviderMismatch
-   * -------------------------
-   * Called when Firebase throws `auth/account-exists-with-different-credential`.
-   * We:
-   *   1. Grab the pending (second) credential.
-   *   2. Sign-in with the *existing* provider for that e-mail.
-   *   3. Link the pending credential to that user.
-   */
+  type ProviderMismatchError = FirebaseError & {
+    customData?: { email?: string };
+  };
+
   async function linkAfterProviderMismatch(
-    error: any
-  ): Promise<AuthUser | never> {
+    error: ProviderMismatchError
+  ): Promise<AuthUser> {
     const pendingCred = GoogleAuthProvider.credentialFromError(
       error
     ) as AuthCredential;
-    const email: string = error?.customData?.email;
+    const email = error.customData?.email ?? "";
     const providers = await fetchSignInMethodsForEmail(auth, email);
 
-    // Case A – existing provider is email/password
     if (providers.includes(EmailAuthProvider.EMAIL_PASSWORD_SIGN_IN_METHOD)) {
       const pwd = window.prompt(
         `An account for ${email} already exists with a password.\n` +
@@ -219,30 +202,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return waitForUserObject();
     }
 
-    // Case B – existing provider is another IdP (e.g. Google⇒Facebook edge case)
     if (providers.length) {
       alert(
         `An account for ${email} exists with ${providers[0]}. ` +
           `Finish that sign-in and we’ll link Google automatically.`
       );
-      // Redirect sign-in with that provider (popup) and link inside its flow.
-      // For simplicity we assume provider[0] is Google – tweak if you add FB.
       const primaryProv = new GoogleAuthProvider();
       const primaryResult = await signInWithPopup(auth, primaryProv);
       await linkWithCredential(primaryResult.user, pendingCred);
       return waitForUserObject();
     }
 
-    // Fallback – shouldn’t happen
     throw error;
   }
 
-  /* Await until onAuthStateChanged + onSnapshot populate `user` ------------- */
   function waitForUserObject(): Promise<AuthUser> {
     return new Promise((resolve) => {
-      const check = setInterval(() => {
+      const t = setInterval(() => {
         if (!loading && user) {
-          clearInterval(check);
+          clearInterval(t);
           resolve(user);
         }
       }, 50);
@@ -253,35 +231,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    *  Public auth actions
    * ────────────────────────────────────────────────────────────────────── */
 
-  /** Email / password sign-in */
   const signIn = async (
     email: string,
     password: string
   ): Promise<AuthUser> => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
-    } catch (err: any) {
-      // If user mistypes pwd we still throw – only intercept linkage errors
-      if (err.code === "auth/account-exists-with-different-credential") {
-        return linkAfterProviderMismatch(err);
+    } catch (err) {
+      if (
+        err instanceof FirebaseError &&
+        err.code === "auth/account-exists-with-different-credential"
+      ) {
+        return linkAfterProviderMismatch(err as ProviderMismatchError);
       }
       throw err;
     }
     return waitForUserObject();
   };
 
-  /** Google sign-in (popup) – now with account linking */
   const signInWithGoogle = async (): Promise<AuthUser> => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (err: any) {
-      if (err.code === "auth/account-exists-with-different-credential") {
-        return linkAfterProviderMismatch(err);
+    } catch (err) {
+      if (
+        err instanceof FirebaseError &&
+        err.code === "auth/account-exists-with-different-credential"
+      ) {
+        return linkAfterProviderMismatch(err as ProviderMismatchError);
       }
       throw err;
     }
 
-    /* Ensure a Firestore profile exists (first-time Google login) */
     const fbUser = auth.currentUser!;
     const ref = doc(db, "users", fbUser.uid);
     const snap = await getDoc(ref);
@@ -290,7 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await setDoc(ref, {
         uid: fbUser.uid,
         email: fbUser.email,
-        roles: ["client"], // default – promote later via invite
+        roles: ["client"],
         ownedBusinessIds: [],
         memberBusinessIds: [],
         ownedLocationIds: [],
@@ -307,7 +287,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return waitForUserObject();
   };
 
-  /** Email / Password sign-up */
   const signUp = async (
     email: string,
     password: string,
@@ -333,13 +312,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return waitForUserObject();
   };
 
-  /** Sign-out */
   const signOutUser = async () => {
     await firebaseSignOut(auth);
     setUser(null);
   };
 
-  /* ── Context value ────────────────────────────────────────────────────── */
+  /* Context value */
   const ctxVal: AuthContextType = {
     user,
     loading,

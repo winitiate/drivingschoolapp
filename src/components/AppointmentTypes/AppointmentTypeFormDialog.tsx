@@ -111,8 +111,10 @@ export default function AppointmentTypeFormDialog({
       setSaving(true);
       setError(null);
       await onSave(payload);
-    } catch (e: any) {
-      setError(e.message || "Failed to save appointment type.");
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : "Failed to save appointment type.";
+      setError(message);
     } finally {
       setSaving(false);
     }

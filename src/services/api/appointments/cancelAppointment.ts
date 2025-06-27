@@ -1,43 +1,60 @@
+// src/services/api/appointments/cancelAppointment.ts
 /**
  * cancelAppointment.ts
  * --------------------------------------------------------------------------
- * Front-end wrapper for the Cloud Function **cancelAppointment**.
+ * Front-end wrapper for the **cancelAppointment** Cloud Function (v3).
  *
- * Typical call:
- *   import { cancelAppointment } from "../../services";
+ * Typical usage:
  *
  *   await cancelAppointment({
- *     appointmentId: "123",
- *     paymentId:     "sq0idp-…",   // optional
- *     amountCents:   5000,         // optional
- *     reason:        "Client sick",
- *     acceptCancellationFee: true, // optional
+ *     appointmentId:          "appt-123",
+ *     cancellationFeeCents:   500,            // optional – dry-run
+ *     acceptCancellationFee:  true,           // optional – 2nd call
+ *     reason:                 "Client sick",  // optional
  *   });
  */
 
 import { httpsCallable } from "firebase/functions";
-// ✅ Correct relative path to src/firebase.ts
 import { functions } from "../../../firebase";
 
 /* ------------------------------------------------------------------ */
-/*  Payload & Result types                                            */
+/*  Payload & Result types (mirror the CF)                             */
 /* ------------------------------------------------------------------ */
+
 export interface CancelAppointmentInput {
+  /** Firestore document ID of the appointment */
   appointmentId: string;
-  /** If appointment had a payment, include paymentId & amountCents */
-  paymentId?: string;
-  amountCents?: number;
-  /** Human-readable reason for logs */
-  reason?: string;
-  /** Used when the CF requires fee acceptance on second call */
+
+  /** Optional: fee suggested by the client (first, *dry-run* call) */
+  cancellationFeeCents?: number;
+
+  /**
+   * Optional: only present on the *second* call when the user
+   * explicitly accepts the server-suggested fee.
+   */
   acceptCancellationFee?: boolean;
+
+  /** Optional free-text reason (max ~1 KB enforced via Firestore rules) */
+  reason?: string;
 }
 
 export interface CancelAppointmentResult {
   success: boolean;
-  refundIssued?: boolean;
-  cancellationFeeCents?: number;
+
+  /**
+   * If `true` the caller *must* show the fee to the user and call
+   * `cancelAppointment` again with `acceptCancellationFee:true`.
+   */
   requiresConfirmation?: boolean;
+
+  /** Echo of the fee the server needs confirmed */
+  cancellationFeeCents?: number;
+
+  /**
+   * Present when the function actually performed a refund /
+   * partial refund.  Exact shape depends on your payment service.
+   */
+  refundResult?: Record<string, unknown>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -46,10 +63,10 @@ export interface CancelAppointmentResult {
 export async function cancelAppointment(
   data: CancelAppointmentInput
 ): Promise<CancelAppointmentResult> {
-  const fn = httpsCallable<CancelAppointmentInput, CancelAppointmentResult>(
-    functions,
-    "cancelAppointment"
-  );
+  const fn = httpsCallable<
+    CancelAppointmentInput,
+    CancelAppointmentResult
+  >(functions, "cancelAppointment");
 
   const res = await fn(data);
   return res.data;

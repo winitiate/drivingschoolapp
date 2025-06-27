@@ -1,17 +1,13 @@
 /**
- * src/components/Appointments/AppointmentFormDialog.tsx
+ * AppointmentFormDialog.tsx
+ * ------------------------------------------------------------
+ * Dialog used by clients / staff to create or edit an appointment.
  *
- * This client‐side dialog now uses an inline “Cancellation Reason” field
- * instead of window.prompt(…). When “Cancel Appointment” is clicked:
- *  1) An inline text field appears for the reason.
- *  2) Typing anything enables “Confirm Cancellation.”
- *  3) Clicking “Confirm Cancellation” issues a refund (if needed) and then
- *     performs a soft‐cancel by saving the appointment back with:
- *       status: "cancelled"
- *       cancellation: { time, reason, feeApplied: false }
+ * ►  Cancellation is now delegated to the shared
+ *    <CancelAppointmentDialog/> so the logic and Cloud-Function call
+ *    are identical to any other cancellation flow in the app.
  *
- * Props:
- *   • open … (see original header for full list)
+ * Props: see `AppointmentFormDialogProps` below.
  */
 
 import React, { useState, useEffect } from "react";
@@ -37,10 +33,7 @@ import { v4 as uuidv4 } from "uuid";
 import { differenceInMinutes, addMinutes } from "date-fns";
 
 import type { Appointment } from "../../models/Appointment";
-import {
-  cancelAppointment as callCancelAppointment,
-  CancelAppointmentInput,
-} from "../../services";               // ← updated import path
+import CancelAppointmentDialog from "./CancelAppointmentDialog"; //  ← NEW import
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -56,9 +49,11 @@ export interface AppointmentFormDialogProps {
   initialData?: Appointment;
   onClose: () => void;
   onSave: (appt: Appointment) => Promise<void>;
+
   clients: Option[];
   serviceProviders: Option[];
   appointmentTypes: Option[];
+
   canEditClient?: boolean;
   canEditAppointmentType?: boolean;
   canEditProvider?: boolean;
@@ -96,47 +91,47 @@ export default function AppointmentFormDialog({
   const [appointmentEnd, setAppointmentEnd] = useState<Date | null>(
     addMinutes(new Date(), 60)
   );
-  const [saving, setSaving] = useState<boolean>(false);
+
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /* ───────── Cancellation UI State ───────── */
-  const [isCancelling, setIsCancelling] = useState<boolean>(false);
-  const [cancelReason, setCancelReason] = useState<string>("");
+  /* ───────── Cancel-dialog state ───────── */
+  const [cancelOpen, setCancelOpen] = useState(false);
 
-  /* ───────── Reset when dialog opens or initialData changes ───────── */
+  /* ───────── Reset when dialog opens / initialData changes ───────── */
   useEffect(() => {
     if (!open) return;
+
     setError(null);
-    setIsCancelling(false);
-    setCancelReason("");
+    setCancelOpen(false);
 
     if (initialData) {
       setAppointmentTypeId(initialData.appointmentTypeId);
-      setClientIds(initialData.clientIds || []);
-      setServiceProviderIds(initialData.serviceProviderIds || []);
+      setClientIds(initialData.clientIds ?? []);
+      setServiceProviderIds(initialData.serviceProviderIds ?? []);
       setAppointmentStart(new Date(initialData.startTime));
       setAppointmentEnd(new Date(initialData.endTime));
     } else {
       const now = new Date();
-      setAppointmentTypeId(appointmentTypes[0]?.id || "");
+      setAppointmentTypeId(appointmentTypes[0]?.id ?? "");
       setClientIds(clients[0] ? [clients[0].id] : []);
-      setServiceProviderIds(
-        serviceProviders[0] ? [serviceProviders[0].id] : []
-      );
+      setServiceProviderIds(serviceProviders[0] ? [serviceProviders[0].id] : []);
       setAppointmentStart(now);
       setAppointmentEnd(addMinutes(now, 60));
     }
   }, [open, initialData, appointmentTypes, clients, serviceProviders]);
 
-  /* ───────── Handle “Save” (create or edit) ───────── */
-  const handleSubmit = async () => {
+  /* ───────── Save (create / edit) ───────── */
+  const handleSave = async () => {
     if (!appointmentStart || !appointmentEnd) return;
+
     setSaving(true);
     setError(null);
 
     const duration = differenceInMinutes(appointmentEnd, appointmentStart);
+
     const appt: Appointment = {
-      id: initialData?.id || uuidv4(),
+      id: initialData?.id ?? uuidv4(),
       appointmentTypeId,
       clientIds,
       serviceProviderIds,
@@ -144,8 +139,8 @@ export default function AppointmentFormDialog({
       startTime: appointmentStart,
       endTime: appointmentEnd,
       durationMinutes: duration,
-      status: initialData?.status || "scheduled",
-      notes: initialData?.notes || "",
+      status: initialData?.status ?? "scheduled",
+      notes: initialData?.notes ?? "",
       locationOverride: initialData?.locationOverride,
       customFields: initialData?.customFields,
       paymentId: initialData?.paymentId,
@@ -157,253 +152,172 @@ export default function AppointmentFormDialog({
     try {
       await onSave(appt);
       onClose();
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to save appointment");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
     }
   };
 
-  /* ───────── Handle “Start Cancellation” ───────── */
-  const handleStartCancel = () => {
-    setIsCancelling(true);
-    setCancelReason("");
-  };
+  /* ───────── Cancellation flow helpers ───────── */
+  const handleCancelClick = () => setCancelOpen(true);
 
-  /* ───────── Handle “Abort Cancellation” ───────── */
-  const handleAbortCancel = () => {
-    setIsCancelling(false);
-    setCancelReason("");
-  };
-
-  /* ───────── Handle “Confirm Cancellation” ───────── */
-  const handleConfirmCancel = async () => {
-    if (!initialData || !initialData.id) return;
-    if (!cancelReason.trim()) {
-      setError("A reason is required to cancel.");
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-
-    // Pull paymentId + amountCents from metadata
-    const pid = initialData.metadata?.paymentId as string | undefined;
-    const cents = (initialData.metadata?.amountCents as number) || 0;
-
-    try {
-      // 1️⃣ Issue refund if paymentId exists
-      if (pid) {
-        await callCancelAppointment({
-          appointmentId: initialData.id,
-          paymentId: pid,
-          amountCents: cents,
-          reason: cancelReason.trim(),
-        });
-      }
-      // 2️⃣ Soft‐cancel by saving an updated copy
-      const updated: Appointment = {
-        ...initialData,
-        status: "cancelled",
-        cancellation: {
-          time: new Date(),
-          reason: cancelReason.trim(),
-          feeApplied: false,
-        },
-      };
-      await onSave(updated);
-      onClose();
-    } catch (e: any) {
-      setError(e?.message ?? "Cancellation / refund failed");
-    } finally {
-      setSaving(false);
-      setIsCancelling(false);
-    }
+  const handleCancelled = async (result: { appointment: Appointment }) => {
+    // propagate updated doc to parent so any local state stays in sync
+    await onSave(result.appointment);
+    setCancelOpen(false);
+    onClose();
   };
 
   /* ───────── Render ───────── */
-  const showCancelButton = isEdit && canCancel && !isCancelling;
-  const confirmEnabled = Boolean(cancelReason.trim());
-
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>
-        {isEdit ? "Edit Appointment" : "Add Appointment"}
-      </DialogTitle>
+    <>
+      {/* ───────── Main Form Dialog ───────── */}
+      <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+        <DialogTitle>{isEdit ? "Edit Appointment" : "Add Appointment"}</DialogTitle>
 
-      <DialogContent dividers>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
+        <DialogContent dividers>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
 
-        {saving && (
-          <Box textAlign="center" mt={1} mb={2}>
-            <CircularProgress size={24} />
-          </Box>
-        )}
+          {saving && (
+            <Box textAlign="center" mt={1} mb={2}>
+              <CircularProgress size={24} />
+            </Box>
+          )}
 
-        <Box display="flex" flexDirection="column" gap={2}>
-          {/* Appointment Type */}
-          <TextField
-            select
-            label="Appointment Type"
-            value={appointmentTypeId}
-            onChange={(e) => setAppointmentTypeId(e.target.value)}
-            fullWidth
-            disabled={!canEditAppointmentType || saving || isCancelling}
-          >
-            {appointmentTypes.map((opt) => (
-              <MenuItem key={opt.id} value={opt.id}>
-                {opt.label}
-              </MenuItem>
-            ))}
-          </TextField>
+          <Box display="flex" flexDirection="column" gap={2}>
+            {/* Appointment type */}
+            <TextField
+              select
+              label="Appointment Type"
+              value={appointmentTypeId}
+              onChange={(e) => setAppointmentTypeId(e.target.value)}
+              fullWidth
+              disabled={!canEditAppointmentType || saving}
+            >
+              {appointmentTypes.map((opt) => (
+                <MenuItem key={opt.id} value={opt.id}>
+                  {opt.label}
+                </MenuItem>
+              ))}
+            </TextField>
 
-          {/* Client(s) */}
-          {canEditClient ? (
+            {/* Clients */}
+            {canEditClient ? (
+              <TextField
+                select
+                multiple
+                label="Client(s)"
+                fullWidth
+                value={clientIds}
+                onChange={(e) => setClientIds(e.target.value as string[])}
+                disabled={saving}
+                renderValue={(selected) =>
+                  (selected as string[])
+                    .map((id) => clients.find((c) => c.id === id)?.label)
+                    .join(", ")
+                }
+              >
+                {clients.map((opt) => (
+                  <MenuItem key={opt.id} value={opt.id}>
+                    <Checkbox checked={clientIds.includes(opt.id)} />
+                    <ListItemText primary={opt.label} />
+                  </MenuItem>
+                ))}
+              </TextField>
+            ) : (
+              <Box>
+                <Typography variant="subtitle2">Client(s)</Typography>
+                <Typography variant="body1">
+                  {clientIds
+                    .map((id) => clients.find((c) => c.id === id)?.label)
+                    .join(", ")}
+                </Typography>
+              </Box>
+            )}
+
+            {/* Service providers */}
             <TextField
               select
               multiple
-              label="Client(s)"
-              value={clientIds}
-              onChange={(e) => setClientIds(e.target.value as string[])}
+              label="Service Provider(s)"
               fullWidth
-              disabled={saving || isCancelling}
+              value={serviceProviderIds}
+              onChange={(e) =>
+                setServiceProviderIds(e.target.value as string[])
+              }
+              disabled={!canEditProvider || saving}
               renderValue={(selected) =>
                 (selected as string[])
-                  .map((id) => clients.find((c) => c.id === id)?.label)
+                  .map((id) => serviceProviders.find((sp) => sp.id === id)?.label)
                   .join(", ")
               }
             >
-              {clients.map((opt) => (
+              {serviceProviders.map((opt) => (
                 <MenuItem key={opt.id} value={opt.id}>
-                  <Checkbox checked={clientIds.includes(opt.id)} />
+                  <Checkbox checked={serviceProviderIds.includes(opt.id)} />
                   <ListItemText primary={opt.label} />
                 </MenuItem>
               ))}
             </TextField>
-          ) : (
-            <Box>
-              <Typography variant="subtitle2">Client(s)</Typography>
-              <Typography variant="body1">
-                {clientIds
-                  .map((id) => clients.find((c) => c.id === id)?.label)
-                  .join(", ")}
-              </Typography>
-            </Box>
-          )}
 
-          {/* Service Provider(s) */}
-          <TextField
-            select
-            multiple
-            label="Service Provider(s)"
-            value={serviceProviderIds}
-            onChange={(e) =>
-              setServiceProviderIds(e.target.value as string[])
-            }
-            fullWidth
-            disabled={!canEditProvider || saving || isCancelling}
-            renderValue={(selected) =>
-              (selected as string[])
-                .map(
-                  (id) => serviceProviders.find((sp) => sp.id === id)?.label
-                )
-                .join(", ")
-            }
-          >
-            {serviceProviders.map((opt) => (
-              <MenuItem key={opt.id} value={opt.id}>
-                <Checkbox checked={serviceProviderIds.includes(opt.id)} />
-                <ListItemText primary={opt.label} />
-              </MenuItem>
-            ))}
-          </TextField>
-
-          {/* Date / Time Pickers */}
-          <LocalizationProvider dateAdapter={AdapterDateFns}>
-            <DateTimePicker
-              label="Start Time"
-              value={appointmentStart}
-              onChange={setAppointmentStart}
-              disabled={!canEditDateTime || saving || isCancelling}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
-            <DateTimePicker
-              label="End Time"
-              value={appointmentEnd}
-              onChange={setAppointmentEnd}
-              disabled={!canEditDateTime || saving || isCancelling}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
-          </LocalizationProvider>
-
-          {/* Inline “Cancellation Reason” field */}
-          {isCancelling && (
-            <Box mt={2}>
-              <Typography variant="subtitle1" gutterBottom>
-                Cancellation Reason
-              </Typography>
-              <TextField
-                multiline
-                minRows={2}
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                fullWidth
-                disabled={saving}
-                placeholder="Enter the reason for cancellation..."
+            {/* Date / time */}
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DateTimePicker
+                label="Start Time"
+                value={appointmentStart}
+                onChange={setAppointmentStart}
+                disabled={!canEditDateTime || saving}
+                slotProps={{ textField: { fullWidth: true } }}
               />
-            </Box>
-          )}
-        </Box>
-      </DialogContent>
+              <DateTimePicker
+                label="End Time"
+                value={appointmentEnd}
+                onChange={setAppointmentEnd}
+                disabled={!canEditDateTime || saving}
+                slotProps={{ textField: { fullWidth: true } }}
+              />
+            </LocalizationProvider>
+          </Box>
+        </DialogContent>
 
-      <DialogActions sx={{ justifyContent: "space-between", p: 2 }}>
-        {/* “Cancel Appointment” button */}
-        {showCancelButton && (
-          <Button color="error" onClick={handleStartCancel} disabled={saving}>
-            Cancel Appointment
-          </Button>
-        )}
-
-        {/* “Abort” and “Confirm Cancellation” buttons */}
-        {isCancelling && (
-          <Box display="flex" gap={1}>
-            <Button
-              color="inherit"
-              onClick={handleAbortCancel}
-              disabled={saving}
-            >
-              Abort
-            </Button>
+        <DialogActions sx={{ justifyContent: "space-between", p: 2 }}>
+          {/* Cancel-appointment button (opens secondary dialog) */}
+          {isEdit && canCancel && (
             <Button
               color="error"
-              onClick={handleConfirmCancel}
-              disabled={!confirmEnabled || saving}
+              disabled={saving}
+              onClick={handleCancelClick}
             >
-              Confirm Cancellation
+              Cancel Appointment
             </Button>
-          </Box>
-        )}
+          )}
 
-        {/* “Close / Save” */}
-        {!isCancelling && (
+          {/* Close / Save */}
           <Box display="flex" gap={1}>
             <Button onClick={onClose} disabled={saving}>
               Close
             </Button>
-            <Button
-              variant="contained"
-              onClick={handleSubmit}
-              disabled={saving}
-            >
+            <Button variant="contained" onClick={handleSave} disabled={saving}>
               Save
             </Button>
           </Box>
-        )}
-      </DialogActions>
-    </Dialog>
+        </DialogActions>
+      </Dialog>
+
+      {/* ───────── Secondary Cancel dialog ───────── */}
+      {initialData && (
+        <CancelAppointmentDialog
+          open={cancelOpen}
+          appointment={initialData}
+          onClose={() => setCancelOpen(false)}
+          onCancelled={handleCancelled}
+        />
+      )}
+    </>
   );
 }

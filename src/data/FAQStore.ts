@@ -8,7 +8,7 @@
  * out (e.g. Firestore, REST API, in-memory mock) without changing calling code.
  */
 
-import { FAQ } from "../models/FAQ";
+import { FAQ } from "../models/Faq";
 
 export interface FAQStore {
   /**

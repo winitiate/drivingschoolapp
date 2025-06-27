@@ -1,28 +1,37 @@
-/**
- * rescheduleAppointment.ts
- *
- * Front-end wrapper for the Callable Cloud Function “rescheduleAppointment”.
- * Keeps all booking / cancel code untouched.
- */
+// src/services/api/appointments/rescheduleAppointment.ts
+// ────────────────────────────────────────────────────────────
+// Wrapper around the Cloud Function  `rescheduleAppointment`
+// ────────────────────────────────────────────────────────────
 
 import { httpsCallable } from "firebase/functions";
-import { functions }     from "../../../firebase";  // ← your initialized SDK
+import { functions } from "../../../firebase";   // ← fixed relative path
 
+/* Local types
+   ─────────────────────────────────────────────── */
 export interface RescheduleAppointmentInput {
-  oldAppointmentId: string;
-  newAppointmentData: Record<string, any>; // must include id
+  appointmentId: string;
+  newStart: string;   // ISO-8601 timestamp
+  newEnd:   string;   // ISO-8601 timestamp
+  reason?:  string;
 }
 
-export interface RescheduleAppointmentResult {
-  success: boolean;
-  newAppointmentId: string;
-}
+/** Adjust once you know the exact shape returned by the Cloud Function */
+export type RescheduleAppointmentResponse = unknown;
 
-export function rescheduleAppointment(
-  input: RescheduleAppointmentInput
-): Promise<RescheduleAppointmentResult> {
-  return httpsCallable<
+/* API call
+   ─────────────────────────────────────────────── */
+/**
+ * Calls the Cloud Function `rescheduleAppointment` and returns the
+ * updated appointment object produced by the back-end.
+ */
+export async function rescheduleAppointment(
+  payload: RescheduleAppointmentInput
+): Promise<RescheduleAppointmentResponse> {
+  const call = httpsCallable<
     RescheduleAppointmentInput,
-    RescheduleAppointmentResult
-  >(functions, "rescheduleAppointment")(input).then(r => r.data);
+    RescheduleAppointmentResponse
+  >(functions, "rescheduleAppointment");
+
+  const { data } = await call(payload);
+  return data;
 }

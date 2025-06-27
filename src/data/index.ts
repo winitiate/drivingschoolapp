@@ -24,8 +24,8 @@ export * from "./FirestoreBusinessStore";
 export * from "./ClientStore";
 export * from "./FirestoreClientStore";
 
-export * from "./FAQStore";
-export * from "./FirestoreFAQStore";
+export * from "./FaqStore";
+export * from "./FirestoreFaqStore";
 
 export * from "./FormTemplateStore";
 export * from "./FirestoreFormTemplateStore";
@@ -55,7 +55,7 @@ import { FirestoreAssessmentStore }        from "./FirestoreAssessmentStore";
 import { FirestoreAssetStore }             from "./FirestoreAssetStore";
 import { FirestoreBusinessStore }          from "./FirestoreBusinessStore";
 import { FirestoreClientStore }            from "./FirestoreClientStore";
-import { FirestoreFAQStore }               from "./FirestoreFAQStore";
+import { FirestoreFAQStore }               from "./FirestoreFaqStore";
 import { FirestoreFormTemplateStore }      from "./FirestoreFormTemplateStore";
 import { FirestoreGradingScaleStore }      from "./FirestoreGradingScaleStore";
 import { FirestoreNotificationStore }      from "./FirestoreNotificationStore";

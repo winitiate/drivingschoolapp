@@ -25,11 +25,11 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { ServiceLocationStore } from '../../../../data/ServiceLocationStore';
 import { FirestoreServiceLocationStore } from '../../../../data/FirestoreServiceLocationStore';
-import { FAQStore } from '../../../../data/FAQStore';
-import { FirestoreFAQStore } from '../../../../data/FirestoreFAQStore';
+import { FAQStore } from '../../../../data/FaqStore';
+import { FirestoreFAQStore } from '../../../../data/FirestoreFaqStore';
 
 import { ServiceLocation } from '../../../../models/ServiceLocation';
-import { FAQ } from '../../../../models/FAQ';
+import { FAQ } from '../../../../models/Faq';
 
 export default function FAQSettings() {
   const { serviceLocationId } = useParams<{ serviceLocationId: string }>();

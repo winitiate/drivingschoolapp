@@ -13,8 +13,8 @@
  * Implements FAQStore to guarantee method signatures stay in sync.
  */
 
-import { FAQ } from "../models/FAQ";
-import { FAQStore } from "./FAQStore";
+import { FAQ } from "../models/Faq";
+import { FAQStore } from "./FaqStore";
 import { db } from "../firebase";
 import {
   collection,

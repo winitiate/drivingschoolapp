@@ -54,7 +54,14 @@ import { differenceInMinutes, addMinutes } from "date-fns";
 import type { Appointment } from "../../../models/Appointment";
 import {
   cancelAppointment as callCancelAppointment,
-} from "../../../services";             // ← updated import path
+} from "../../../services"; // ← updated import path
+
+/* ────────────────────────────────────────────────────────────── */
+/* Helpers                                                        */
+/* ────────────────────────────────────────────────────────────── */
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : "Unknown error";
+}
 
 export interface Option {
   id: string;
@@ -169,8 +176,8 @@ export default function AdminAppointmentDialog({
     try {
       await onSave(appt);
       onClose();
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to save appointment");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) ?? "Failed to save appointment");
     } finally {
       setSaving(false);
     }
@@ -226,8 +233,8 @@ export default function AdminAppointmentDialog({
       };
       await onDelete(updated);
       onClose();
-    } catch (e: any) {
-      setError(e?.message ?? "Cancellation/refund failed");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err) ?? "Cancellation/refund failed");
     } finally {
       setSaving(false);
       setIsCancelling(false);

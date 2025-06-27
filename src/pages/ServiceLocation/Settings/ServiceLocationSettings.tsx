@@ -9,7 +9,7 @@ import AssessmentTypesManager      from './AssessmentTypes/AssessmentTypesManage
 import GradingScalesManager        from './GradingScales/GradingScalesManager';
 import PackageSettings             from './PackageSettings/PackageSettings';
 import BusinessHoursSettings       from './BusinessHours/BusinessHoursSettings';
-import FAQSettings                 from './FAQSettings/FAQSettings';
+import FAQSettings                 from './FAQSettings/FaqSettings';
 import SquareUpSettings            from './SquareUpSettings/SquareUpSettings';
 import AdminSettings               from './ServiceLocationAdminSettings/ServiceLocationAdminSettings';
 

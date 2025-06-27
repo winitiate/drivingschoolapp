@@ -19,7 +19,7 @@ import AssessmentTypesManager      from '../pages/ServiceLocation/Settings/Asses
 import GradingScalesManager        from '../pages/ServiceLocation/Settings/GradingScales/GradingScalesManager';
 import PackageSettings             from '../pages/ServiceLocation/Settings/PackageSettings/PackageSettings';
 import BusinessHoursSettings       from '../pages/ServiceLocation/Settings/BusinessHours/BusinessHoursSettings';
-import FAQSettings                 from '../pages/ServiceLocation/Settings/FAQSettings/FAQSettings';
+import FAQSettings                 from '../pages/ServiceLocation/Settings/FAQSettings/FaqSettings';
 import FormTemplatesManager        from '../pages/ServiceLocation/Settings/FormTemplates/FormTemplatesManager';
 import ServiceLocationAdminSettings from '../pages/ServiceLocation/Settings/ServiceLocationAdminSettings/ServiceLocationAdminSettings';
 import SquareUpSettings            from '../pages/ServiceLocation/Settings/SquareUpSettings/SquareUpSettings';
