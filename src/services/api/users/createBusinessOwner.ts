@@ -1,4 +1,4 @@
-import { httpsCallable } from "firebase/functions";
+//src\services\api\users\createBusinessOwner.tsimport { httpsCallable } from "firebase/functions";
 import { functions } from "../../../firebase";
 
 interface Input {

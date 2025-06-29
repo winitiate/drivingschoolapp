@@ -1,15 +1,26 @@
-// src/pages/ServiceLocation/Settings/ServiceLocationAdminSettings/ServiceLocationAdminSettings.tsx
+/*  src/pages/ServiceLocation/Settings/ServiceLocationAdminSettings/ServiceLocationAdminSettings.tsx
 
-/**
- * ServiceLocationAdminSettings.tsx
- *
- * Admin interface for managing the list of additional
- * administrators for a specific service location.
- * Uses the ServiceLocationStore abstraction to load and save.
- */
+  ServiceLocationAdminSettings
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+  • Lists and lets you add Service-Location admins.
+  • “Manage” (⚙️) opens UserLifecycleDialog(role="locationAdmin", uid, locationId),
+    which now fetches + pre-selects Ban/Deactivate/Reactivate and message automatically.
+  • onActionCompleted(action,message?) updates Firestore:
+      – “delete” (remove admin)
+      – “deactivate” / “ban” (add/remove to *_AdminLocationIds arrays and write lifecycleNotes)
+      – “reactivate” (remove from both arrays, clear lifecycleNotes)
+  • Afterwards reloads the list.
+
+  Drop in place of your existing file.
+*/
+
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
+import { useParams } from "react-router-dom";
 import {
   Box,
   Typography,
@@ -20,94 +31,151 @@ import {
   IconButton,
   CircularProgress,
   Alert,
-} from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import { getFirestore, collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+  ListItemText,
+} from "@mui/material";
+import DeleteIcon from "@mui/icons-material/Delete";
+import ManageAccountsIcon from "@mui/icons-material/ManageAccounts";
+import {
+  getFirestore,
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  updateDoc,
+  arrayUnion,
+  arrayRemove,
+  serverTimestamp,
+} from "firebase/firestore";
+import { v4 as uuidv4 } from "uuid";
 
-import { ServiceLocation } from '../../../../models/ServiceLocation';
-import { ServiceLocationStore } from '../../../../data/ServiceLocationStore';
-import { FirestoreServiceLocationStore } from '../../../../data/FirestoreServiceLocationStore';
+import { ServiceLocation } from "../../../../models/ServiceLocation";
+import {
+  FirestoreServiceLocationStore,
+} from "../../../../data/FirestoreServiceLocationStore";
+import type { ServiceLocationStore } from "../../../../data/ServiceLocationStore";
+
+import UserLifecycleDialog from "../../../../components/UserLifecycle/UserLifecycleDialog";
+
+interface AdminProfile {
+  uid: string;
+  email: string;
+  status: "banned" | "deactivated" | null;
+  banMessage?: string;
+}
 
 export default function ServiceLocationAdminSettings() {
-  const { serviceLocationId } = useParams<{ serviceLocationId: string }>();
+  const { serviceLocationId } = useParams<{
+    serviceLocationId: string;
+  }>();
+  const db = getFirestore();
   const store: ServiceLocationStore = useMemo(
     () => new FirestoreServiceLocationStore(),
     []
   );
-  const db = getFirestore();
 
   const [location, setLocation] = useState<ServiceLocation | null>(null);
-  const [adminIds, setAdminIds] = useState<string[]>([]);
-  const [adminEmails, setAdminEmails] = useState<string[]>([]);
-  const [newEmail, setNewEmail] = useState('');
+  const [admins, setAdmins] = useState<AdminProfile[]>([]);
+  const [newEmail, setNewEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load current service location and its adminIds
+  const [dlgOpen, setDlgOpen] = useState(false);
+  const [dlgTarget, setDlgTarget] = useState<AdminProfile | null>(null);
+
   const load = useCallback(async () => {
     if (!serviceLocationId) return;
     setLoading(true);
     setError(null);
     try {
       const loc = await store.getById(serviceLocationId);
-      if (!loc) {
-        throw new Error('Service location not found');
-      }
+      if (!loc) throw new Error("Service location not found");
       setLocation(loc);
-      setAdminIds(loc.adminIds || []);
 
-      // Resolve adminIds → emails
-      const emails: string[] = [];
-      for (const uid of loc.adminIds || []) {
-        const snap = await getDoc(doc(db, 'users', uid));
-        if (snap.exists()) {
-          const data = snap.data() as any;
-          if (data.email) emails.push(data.email);
-        }
+      const profiles: AdminProfile[] = [];
+      for (const uid of loc.adminIds ?? []) {
+        const snap = await getDoc(doc(db, "users", uid));
+        if (!snap.exists()) continue;
+        const d = snap.data() as any;
+
+        const bannedArr: string[] =
+          d.bannedAdminLocationIds || [];
+        const deactArr: string[] =
+          d.deactivatedAdminLocationIds || [];
+
+        // lifecycleNotes stored under map or dotted field
+        const notesMap = (d.lifecycleNotes as Record<string, any>) || {};
+        const dotField = d[`lifecycleNotes.${serviceLocationId}`];
+        const noteEntry = notesMap[serviceLocationId] ?? dotField;
+
+        profiles.push({
+          uid,
+          email: d.email ?? "(no email)",
+          status: bannedArr.includes(serviceLocationId)
+            ? "banned"
+            : deactArr.includes(serviceLocationId)
+            ? "deactivated"
+            : null,
+          banMessage: noteEntry?.msg,
+        });
       }
-      setAdminEmails(emails);
+      setAdmins(profiles);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [serviceLocationId, store, db]);
+  }, [db, serviceLocationId, store]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // Resolve an email to a userId
-  const resolveEmailToUid = async (email: string): Promise<string | null> => {
+  const resolveEmailToUid = async (
+    email: string
+  ): Promise<string | null> => {
     const q = query(
-      collection(db, 'users'),
-      where('email', '==', email.trim().toLowerCase())
+      collection(db, "users"),
+      where("email", "==", email.trim().toLowerCase())
     );
     const snaps = await getDocs(q);
-    if (snaps.empty) return null;
-    return snaps.docs[0].id;
+    return snaps.empty ? null : snaps.docs[0].id;
   };
 
-  // Add a new admin by email
   const handleAdd = async () => {
-    setError(null);
     const email = newEmail.trim().toLowerCase();
     if (!email) return;
     setSaving(true);
+    setError(null);
     try {
-      const uid = await resolveEmailToUid(email);
-      if (!uid) {
-        throw new Error(`No user found with email ${email}`);
+      let uid =
+        (await resolveEmailToUid(email)) ??
+        uuidv4();
+      if (admins.some((a) => a.uid === uid)) {
+        throw new Error("User is already an admin");
       }
-      if (adminIds.includes(uid)) {
-        throw new Error('User is already an admin');
+      if (!(await resolveEmailToUid(email))) {
+        // create stub
+        await updateDoc(doc(db, "users", uid), {
+          uid,
+          email,
+          roles: arrayUnion("serviceLocationAdmin"),
+          adminLocationIds: arrayUnion(serviceLocationId),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
       }
-      const updatedIds = [...adminIds, uid];
-      await store.save({ ...(location as ServiceLocation), adminIds: updatedIds });
-      setAdminIds(updatedIds);
-      setAdminEmails([...adminEmails, email]);
-      setNewEmail('');
+      await store.save({
+        ...(location as ServiceLocation),
+        adminIds: arrayUnion(uid) as any,
+      });
+      setAdmins((prev) => [
+        ...prev,
+        { uid, email, status: null },
+      ]);
+      setNewEmail("");
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -115,15 +183,73 @@ export default function ServiceLocationAdminSettings() {
     }
   };
 
-  // Remove an admin by index
-  const handleRemove = async (index: number) => {
-    setError(null);
+  const openLifecycle = (admin: AdminProfile) => {
+    setDlgTarget(admin);
+    setDlgOpen(true);
+  };
+
+  const handleLifecycleDone = async (
+    action: "ban" | "deactivate" | "reactivate" | "delete",
+    message?: string
+  ) => {
+    setDlgOpen(false);
+    if (!dlgTarget) return;
     setSaving(true);
+    setError(null);
     try {
-      const updatedIds = adminIds.filter((_, i) => i !== index);
-      await store.save({ ...(location as ServiceLocation), adminIds: updatedIds });
-      setAdminIds(updatedIds);
-      setAdminEmails(adminEmails.filter((_, i) => i !== index));
+      const userRef = doc(db, "users", dlgTarget.uid);
+
+      if (action === "delete") {
+        // remove admin
+        await store.save({
+          ...(location as ServiceLocation),
+          adminIds: arrayRemove(dlgTarget.uid) as any,
+        });
+        await updateDoc(userRef, {
+          adminLocationIds: arrayRemove(serviceLocationId),
+          updatedAt: serverTimestamp(),
+        });
+      } else if (action === "deactivate") {
+        await updateDoc(userRef, {
+          deactivatedAdminLocationIds: arrayUnion(
+            serviceLocationId
+          ),
+          bannedAdminLocationIds: arrayRemove(serviceLocationId),
+          [`lifecycleNotes.${serviceLocationId}`]: {
+            type: "deactivated",
+            msg: message || "",
+            at: new Date().toISOString(),
+            by: "SYSTEM",
+          },
+          updatedAt: serverTimestamp(),
+        });
+      } else if (action === "ban") {
+        await updateDoc(userRef, {
+          bannedAdminLocationIds: arrayUnion(serviceLocationId),
+          deactivatedAdminLocationIds: arrayRemove(
+            serviceLocationId
+          ),
+          [`lifecycleNotes.${serviceLocationId}`]: {
+            type: "banned",
+            msg: message || "",
+            at: new Date().toISOString(),
+            by: "SYSTEM",
+          },
+          updatedAt: serverTimestamp(),
+        });
+      } else if (action === "reactivate") {
+        await updateDoc(userRef, {
+          bannedAdminLocationIds: arrayRemove(serviceLocationId),
+          deactivatedAdminLocationIds: arrayRemove(
+            serviceLocationId
+          ),
+          [`lifecycleNotes.${serviceLocationId}`]:
+            serverTimestamp(), // or omit to clear
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      await load();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -142,7 +268,7 @@ export default function ServiceLocationAdminSettings() {
   return (
     <Box>
       <Typography variant="h6" gutterBottom>
-        Admin Settings
+        Service-Location Admins
       </Typography>
 
       {error && (
@@ -157,31 +283,55 @@ export default function ServiceLocationAdminSettings() {
           type="email"
           fullWidth
           value={newEmail}
-          onChange={e => setNewEmail(e.target.value)}
+          onChange={(e) => setNewEmail(e.target.value)}
         />
         <Button
           variant="contained"
           onClick={handleAdd}
-          disabled={saving}
+          disabled={saving || !newEmail.trim()}
         >
-          {saving ? 'Adding…' : 'Add'}
+          {saving ? "Adding…" : "Add"}
         </Button>
       </Box>
 
       <List>
-        {adminEmails.map((email, idx) => (
+        {admins.map((adm) => (
           <ListItem
-            key={idx}
+            key={adm.uid}
             secondaryAction={
-              <IconButton onClick={() => handleRemove(idx)}>
-                <DeleteIcon />
+              <IconButton
+                edge="end"
+                onClick={() => openLifecycle(adm)}
+                title="Manage"
+              >
+                <ManageAccountsIcon />
               </IconButton>
             }
           >
-            {email}
+            <ListItemText
+              primary={adm.email}
+              secondary={
+                adm.status === "deactivated"
+                  ? "Deactivated"
+                  : adm.status === "banned"
+                  ? `Banned – ${adm.banMessage ?? "no reason"}`
+                  : "Active"
+              }
+            />
           </ListItem>
         ))}
       </List>
+
+      {dlgTarget && (
+        <UserLifecycleDialog
+          open={dlgOpen}
+          onClose={() => setDlgOpen(false)}
+          onActionCompleted={handleLifecycleDone}
+          role="locationAdmin"
+          uid={dlgTarget.uid}
+          locationId={serviceLocationId!}
+        />
+      )}
     </Box>
   );
 }

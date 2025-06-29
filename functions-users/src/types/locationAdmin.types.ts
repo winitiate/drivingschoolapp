@@ -1,3 +1,4 @@
+// functions-users\src\types\userLifecycle.types.ts
 /**
  * LocationAdminPayload
  * --------------------------------------------------------------------------

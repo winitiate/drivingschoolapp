@@ -1,41 +1,31 @@
-import express from "express";
-import cors from "cors";
-import { onRequest, HttpsError } from "firebase-functions/v2/https";
-import { requireString } from "../utils/validateRequest";
+import { onCall, HttpsError, CallableRequest } from "firebase-functions/v2/https";
 import {
-  assertSelfRegAllowed,
-  SelfRegRole,
-} from "../utils/selfReg.utils";
-import { createProvider } from "../services/provider.service";
-import { ProviderPayload } from "../types/provider.types";
+  createServiceProviderService,
+} from "../services/serviceProvider.service";
+import type {
+  CreateServiceProviderInput,
+  CreateServiceProviderResult,
+} from "../types/serviceProvider.types";
 
-const app = express();
-app.use(cors({ origin: true }));
-app.use(express.json());
+export const createServiceProvider = onCall(
+  { memory: "256MiB", timeoutSeconds: 30 },
+  async (
+    req: CallableRequest<CreateServiceProviderInput>
+  ): Promise<CreateServiceProviderResult> => {
+    const data = req.data;
 
-app.post("/", async (req, res) => {
-  try {
-    const p = req.body as ProviderPayload;
-    requireString("email", p.email);
-
-    if (
-      !Array.isArray(p.providerLocationIds) ||
-      p.providerLocationIds.length === 0
-    ) {
-      throw new HttpsError("invalid-argument", "providerLocationIds[] required");
+    if (!data?.email) {
+      throw new HttpsError("invalid-argument", "Missing required field: email");
+    }
+    if (!Array.isArray(data.providerLocationIds) || !data.providerLocationIds.length) {
+      throw new HttpsError("invalid-argument", "providerLocationIds must be a non-empty array");
     }
 
-    await assertSelfRegAllowed("provider", p.providerLocationIds);
-
-    const out = await createProvider(p);
-    res.json(out);
-  } catch (err: any) {
-    console.error("createServiceProvider error", err);
-    res.status(err.httpErrorCode?.status || 500).json({ error: err.message });
+    try {
+      return await createServiceProviderService(data);
+    } catch (err: unknown) {
+      console.error("createServiceProvider error:", err);
+      throw new HttpsError("internal", (err as any)?.message || "Failed to create service provider");
+    }
   }
-});
-
-export const createServiceProvider = onRequest(
-  { region: "us-central1" },
-  app
 );

@@ -1,35 +1,22 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createServiceProvider = void 0;
-const express_1 = __importDefault(require("express"));
-const cors_1 = __importDefault(require("cors"));
 const https_1 = require("firebase-functions/v2/https");
-const validateRequest_1 = require("../utils/validateRequest");
-const selfReg_utils_1 = require("../utils/selfReg.utils");
-const provider_service_1 = require("../services/provider.service");
-const app = (0, express_1.default)();
-app.use((0, cors_1.default)({ origin: true }));
-app.use(express_1.default.json());
-app.post("/", async (req, res) => {
-    var _a;
+const serviceProvider_service_1 = require("../services/serviceProvider.service");
+exports.createServiceProvider = (0, https_1.onCall)({ memory: "256MiB", timeoutSeconds: 30 }, async (req) => {
+    const data = req.data;
+    if (!(data === null || data === void 0 ? void 0 : data.email)) {
+        throw new https_1.HttpsError("invalid-argument", "Missing required field: email");
+    }
+    if (!Array.isArray(data.providerLocationIds) || !data.providerLocationIds.length) {
+        throw new https_1.HttpsError("invalid-argument", "providerLocationIds must be a non-empty array");
+    }
     try {
-        const p = req.body;
-        (0, validateRequest_1.requireString)("email", p.email);
-        if (!Array.isArray(p.providerLocationIds) ||
-            p.providerLocationIds.length === 0) {
-            throw new https_1.HttpsError("invalid-argument", "providerLocationIds[] required");
-        }
-        await (0, selfReg_utils_1.assertSelfRegAllowed)("provider", p.providerLocationIds);
-        const out = await (0, provider_service_1.createProvider)(p);
-        res.json(out);
+        return await (0, serviceProvider_service_1.createServiceProviderService)(data);
     }
     catch (err) {
-        console.error("createServiceProvider error", err);
-        res.status(((_a = err.httpErrorCode) === null || _a === void 0 ? void 0 : _a.status) || 500).json({ error: err.message });
+        console.error("createServiceProvider error:", err);
+        throw new https_1.HttpsError("internal", (err === null || err === void 0 ? void 0 : err.message) || "Failed to create service provider");
     }
 });
-exports.createServiceProvider = (0, https_1.onRequest)({ region: "us-central1" }, app);
 //# sourceMappingURL=createServiceProvider.handler.js.map

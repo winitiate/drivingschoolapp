@@ -1,53 +1,70 @@
-// src/models/User.ts
+/*  src/models/User.ts  */
 
-import { BaseEntity } from './BaseEntity';
+import { BaseEntity } from "./BaseEntity";
 
+/* ------------------------------------------------------------------ */
+/*  Role enums                                                        */
+/* ------------------------------------------------------------------ */
 export type UserRole =
-  | 'superAdmin'
-  | 'businessOwner'
-  | 'locationAdmin'
-  | 'serviceProvider'
-  | 'client';
+  | "superAdmin"
+  | "businessOwner"
+  | "locationAdmin"
+  | "serviceProvider"
+  | "client";
 
+/* ------------------------------------------------------------------ */
+/*  User model                                                        */
+/* ------------------------------------------------------------------ */
 /**
- * Central auth/profile record (Firebase Auth UID ties to this).
- * Extends BaseEntity so we get createdAt/updatedAt/status/etc.
+ * Canonical user profile document (1-to-1 with Firebase-Auth UID).
+ * Inherits `createdAt`, `updatedAt`, `status` … from BaseEntity.
  */
 export interface User extends BaseEntity {
-  /** Firebase Auth UID */
-  uid: string;
-
-  /** Core profile */
+  /* ── identity ──────────────────────────────────────────────────── */
+  uid: string;                // Firebase-Auth UID
   email: string;
   firstName?: string;
   lastName?: string;
   phone?: string;
 
-  /** Global capability roles */
+  /* ── global roles (“capabilities”) ─────────────────────────────── */
   roles: UserRole[];
 
-  /** 
-   * Businesses they own (role includes 'businessOwner') 
-   * or belong to as staff/admin.
+  /* ── ownership / membership lists ──────────────────────────────── */
+  ownedBusinessIds:   string[];  // ↔ role “businessOwner”
+  memberBusinessIds:  string[];
+
+  ownedLocationIds:   string[];  // sub-site owners
+  adminLocationIds:   string[];  // ↔ role “locationAdmin”
+  providerLocationIds:string[];  // ↔ role “serviceProvider”
+  clientLocationIds:  string[];  // ↔ role “client”
+
+  /* ── life-cycle control (per relationship) ─────────────────────── */
+  bannedProviderLocationIds?:      string[];
+  deactivatedProviderLocationIds?: string[];
+
+  bannedClientLocationIds?:        string[];
+  deactivatedClientLocationIds?:   string[];
+
+  bannedAdminLocationIds?:         string[];
+  deactivatedAdminLocationIds?:    string[];
+
+  bannedOwnedBusinessIds?:         string[];
+  deactivatedOwnedBusinessIds?:    string[];
+
+  /**
+   * Sparse note map — keyed by locationId / businessId.
+   * Only present when user is currently *banned* or *deactivated*.
    */
-  ownedBusinessIds: string[];
-  memberBusinessIds: string[];
+  lifecycleNotes?: {
+    [locationOrBizId: string]: {
+      type: "banned" | "deactivated";
+      msg?: string;     // human-readable reason (optional)
+      by:  string;      // actor UID
+      at:  string;      // ISO-8601 timestamp
+    };
+  };
 
-  /** 
-   * Service‐locations they own outright 
-   * (e.g. subsite owners).
-   */
-  ownedLocationIds: string[];
-
-  /** Service‐locations they administer (role includes 'locationAdmin') */
-  adminLocationIds: string[];
-
-  /** Service‐locations they deliver services at (role includes 'serviceProvider') */
-  providerLocationIds: string[];
-
-  /** Service‐locations where they are a client (role includes 'client') */
-  clientLocationIds: string[];
-
-  /** Per-location granular permissions, if you still need them */
+  /* ── optional fine-grain ACL _____________________________________ */
   permissions?: Record<string, string[]>;
 }

@@ -1,23 +1,24 @@
 /**
  * src/services/api/index.ts
- * --------------------------------------------------------------------------
- * Groups service wrappers by domain folder but re-exports them here so that
- * the top-level barrel (src/services/index.ts) can stay one-liner simple.
- *
- * Keep **all** explicit exports here; no wildcards so dead code can tree-shake.
+ * ────────────────────────────────────────────────────────────────────────────
+ * Central barrel for *client-side* API wrappers.  Add explicit exports only;
+ * no wildcards, so dead-code elimination can shake unused calls.
  */
 
-/* ─────────────  APPOINTMENTS  ───────────── */
+/* ─── APPOINTMENTS ─── */
 export * from "./appointments/bookAppointment";
 export * from "./appointments/cancelAppointment";
 export * from "./appointments/rescheduleAppointment";
 
-/* ─────────────  PAYMENTS  ───────────── */
+/* ─── PAYMENTS ─── */
 export * from "./payments/refundPayment";
 
-/* ─────────────  USERS & TENANTS  ─────── */
+/* ─── USERS & TENANTS ─── */
 export * from "./users/createBusiness";
+export * from "./users/createBusinessOwner";
 export * from "./users/createClient";
 export * from "./users/createServiceLocationAdmin";
 export * from "./users/createServiceProvider";
-export * from "./users/createBusinessOwner"; // ✅ NEW: creates auth + Firestore profile
+
+/* ─── LIFECYCLE / STATUS ─── */
+export * from "./lifecycle/setUserLifecycle";
